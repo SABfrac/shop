@@ -110,6 +110,95 @@ $this->batchInsert('{{%categories}}',
             ]
         );
 
+        // Получаем ID созданных категорий
+        $mensClothingId = $this->getDb()->createCommand("SELECT id FROM {{%categories}} WHERE slug = 'mens-clothing'")->queryScalar();
+        $womensClothingId = $this->getDb()->createCommand("SELECT id FROM {{%categories}} WHERE slug = 'womens-clothing'")->queryScalar();
+        $kidsClothingId = $this->getDb()->createCommand("SELECT id FROM {{%categories}} WHERE slug = 'kids-clothing'")->queryScalar();
+        $footwearId = $this->getDb()->createCommand("SELECT id FROM {{%categories}} WHERE slug = 'footwear'")->queryScalar();
+        $accessoriesId = $this->getDb()->createCommand("SELECT id FROM {{%categories}} WHERE slug = 'accessories'")->queryScalar();
+
+
+        // Вставляем подкатегории для Одежды
+        $this->batchInsert('{{%categories}}',
+            ['parent_id', 'name', 'slug', 'description', 'sort_order', 'created_at', 'updated_at'],
+            [
+                // Подкатегории для мужской одежды
+                [$mensClothingId, 'Рубашки', 'mens-shirts', 'Мужские рубашки', 2110, $currentTime, $currentTime],
+                [$mensClothingId, 'Футболки', 'mens-t-shirts', 'Мужские футболки', 2120, $currentTime, $currentTime],
+                [$mensClothingId, 'Джинсы', 'mens-jeans', 'Мужские джинсы', 2130, $currentTime, $currentTime],
+                [$mensClothingId, 'Брюки', 'mens-pants', 'Мужские брюки', 2140, $currentTime, $currentTime],
+                [$mensClothingId, 'Костюмы', 'mens-suits', 'Мужские костюмы', 2150, $currentTime, $currentTime],
+                [$mensClothingId, 'Худи и толстовки', 'mens-hoodies', 'Мужские худи и толстовки', 2160, $currentTime, $currentTime],
+                [$mensClothingId, 'Верхняя одежда', 'mens-outerwear', 'Пальто, куртки, пуховики', 2170, $currentTime, $currentTime],
+                [$mensClothingId, 'Нижнее белье', 'mens-underwear', 'Трусы, плавки, майки', 2180, $currentTime, $currentTime],
+
+
+                // Подкатегории для женской одежды
+                [$womensClothingId, 'Платья', 'womens-dresses', 'Женские платья', 2210, $currentTime, $currentTime],
+                [$womensClothingId, 'Блузки', 'womens-blouses', 'Женские блузки', 2220, $currentTime, $currentTime],
+                [$womensClothingId, 'Футболки', 'womens-t-shirts', 'Женские футболки', 2230, $currentTime, $currentTime],
+                [$womensClothingId, 'Джинсы', 'womens-jeans', 'Женские джинсы', 2240, $currentTime, $currentTime],
+                [$womensClothingId, 'Юбки', 'womens-skirts', 'Женские юбки', 2250, $currentTime, $currentTime],
+                [$womensClothingId, 'Брюки', 'womens-pants', 'Женские брюки', 2260, $currentTime, $currentTime],
+                [$womensClothingId, 'Худи и толстовки', 'womens-hoodies', 'Женские худи и толстовки', 2270, $currentTime, $currentTime],
+                [$womensClothingId, 'Верхняя одежда', 'womens-outerwear', 'Пальто, куртки, пуховики', 2280, $currentTime, $currentTime],
+                [$womensClothingId, 'Женское нижнее белье', 'women-underwear', 'Нижнее белье для женщин', 2290, $currentTime, $currentTime],
+            ]
+        );
+
+                $mensUnderwearId=$this->getDb()->createCommand("SELECT id FROM {{%categories}} WHERE slug = 'mens-underwear'")->queryScalar();
+                $womensLingerieId=$this->getDb()->createCommand("SELECT id FROM {{%categories}} WHERE slug = 'women-underwear'")->queryScalar();
+
+        $this->batchInsert('{{%categories}}',
+            ['parent_id', 'name', 'slug', 'description', 'sort_order', 'created_at', 'updated_at'],
+            [
+
+                // Подкатегории для мужского нижнего белья
+                [$mensUnderwearId, 'Трусы', 'mens-briefs', 'Мужские трусы', 2181, $currentTime, $currentTime],
+                [$mensUnderwearId, 'Плавки', 'mens-swimwear', 'Плавки и боксеры для плавания', 2182, $currentTime, $currentTime],
+                [$mensUnderwearId, 'Боксеры', 'mens-boxers', 'Боксеры и семейные трусы', 2183, $currentTime, $currentTime],
+                [$mensUnderwearId, 'Майки', 'mens-undershirts', 'Нательные майки и фуфайки', 2184, $currentTime, $currentTime],
+                [$mensUnderwearId, 'Термобелье', 'mens-thermo', 'Термобелье для холодного сезона', 2185, $currentTime, $currentTime],
+                [$mensUnderwearId, 'Домашняя одежда', 'mens-loungewear', 'Домашние костюмы и пижамы', 2186, $currentTime, $currentTime],
+                [$mensUnderwearId, 'Носки', 'mens-socks', 'Мужские носки', 2187, $currentTime, $currentTime],
+                // Подкатегории для женского нижнего белья
+                [$womensLingerieId, 'Бюстгальтеры', 'bras', 'Женские бюстгальтеры', 2291, $currentTime, $currentTime],
+                [$womensLingerieId, 'Трусы', 'panties', 'Женские трусы', 2292, $currentTime, $currentTime],
+                [$womensLingerieId, 'Комплекты', 'lingerie-sets', 'Комплекты нижнего белья', 2293, $currentTime, $currentTime],
+                [$womensLingerieId, 'Корсеты', 'corsets', 'Корсеты и утягивающее белье', 2294, $currentTime, $currentTime],
+                [$womensLingerieId, 'Чулки и колготки', 'hosiery', 'Чулки, колготки, носочки', 2295, $currentTime, $currentTime],
+                [$womensLingerieId, 'Домашняя одежда', 'loungewear', 'Пижамы, халаты', 2296, $currentTime, $currentTime],
+                [$womensLingerieId, 'Купальники', 'swimwear', 'Купальники и пляжное белье', 2297, $currentTime, $currentTime],
+
+
+                // Подкатегории для детской одежды
+                [$kidsClothingId, 'Одежда для мальчиков', 'boys-clothing', 'Одежда для мальчиков', 2310, $currentTime, $currentTime],
+                [$kidsClothingId, 'Одежда для девочек', 'girls-clothing', 'Одежда для девочек', 2320, $currentTime, $currentTime],
+                [$kidsClothingId, 'Одежда для малышей', 'baby-clothing', 'Одежда для новорожденных', 2330, $currentTime, $currentTime],
+                [$kidsClothingId, 'Школьная форма', 'school-uniforms', 'Школьная форма для детей', 2340, $currentTime, $currentTime],
+
+
+                // Подкатегории для обуви
+                [$footwearId, 'Мужская обувь', 'mens-footwear', 'Обувь для мужчин', 2410, $currentTime, $currentTime],
+                [$footwearId, 'Женская обувь', 'womens-footwear', 'Обувь для женщин', 2420, $currentTime, $currentTime],
+                [$footwearId, 'Детская обувь', 'kids-footwear', 'Обувь для детей', 2430, $currentTime, $currentTime],
+                [$footwearId, 'Спортивная обувь', 'sports-shoes', 'Кроссовки и спортивная обувь', 2440, $currentTime, $currentTime],
+                [$footwearId, 'Сапоги и ботинки', 'boots', 'Зимняя и демисезонная обувь', 2450, $currentTime, $currentTime],
+
+
+                // Подкатегории для аксессуаров
+                [$accessoriesId, 'Сумки', 'bags', 'Сумки, рюкзаки, кошельки', 2510, $currentTime, $currentTime],
+                [$accessoriesId, 'Головные уборы', 'hats', 'Шапки, кепки, шляпы', 2520, $currentTime, $currentTime],
+                [$accessoriesId, 'Ремни и пояса', 'belts', 'Ремни для мужчин и женщин', 2530, $currentTime, $currentTime],
+                [$accessoriesId, 'Перчатки и варежки', 'gloves', 'Перчатки и варежки', 2540, $currentTime, $currentTime],
+                [$accessoriesId, 'Шарфы и платки', 'scarves', 'Шарфы, палантины, платки', 2550, $currentTime, $currentTime],
+
+
+            ]
+        );
+
+
+
 
 // Вставляем подкатегории для Бытовая техника
         $this->batchInsert('{{%categories}}',

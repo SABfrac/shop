@@ -17,7 +17,13 @@
         "php": ">=7.4.0",
         "yiisoft/yii2": "~2.0.45",
         "yiisoft/yii2-bootstrap5": "~2.0.2",
-        "yiisoft/yii2-symfonymailer": "~2.0.3"
+        "yiisoft/yii2-symfonymailer": "~2.0.3",
+        "opensearch-project/opensearch-php": "^2.4",
+        "guzzlehttp/psr7": "^2.7",
+        "symfony/http-client": "^7.3",
+        "php-amqplib/php-amqplib": "^3.7",
+        "yiisoft/yii2-queue": "^2.3",
+        "yiisoft/yii2-redis": "^2.0"
     },
     "require-dev": {
         "yiisoft/yii2-debug": "~2.1.0",
@@ -32,7 +38,8 @@
     },
     "config": {
         "allow-plugins": {
-            "yiisoft/yii2-composer" : true
+            "yiisoft/yii2-composer": true,
+            "php-http/discovery": true
         },
         "process-timeout": 1800,
         "fxp-asset": {

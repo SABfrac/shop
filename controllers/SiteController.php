@@ -10,6 +10,7 @@ use yii\filters\VerbFilter;
 use app\models\LoginForm;
 use app\models\ContactForm;
 use app\models\User;
+use app\components\OpenSearch;
 class SiteController extends Controller
 {
     /**
@@ -62,22 +63,7 @@ class SiteController extends Controller
     public function actionIndex()
 
     {
-        $user = new User;
 
-        $user->username = 'test_user';
-        $user->email = 'test@example.com';
-        $user->password_hash = Yii::$app->security->generatePasswordHash('test_password');
-        $user->auth_key = Yii::$app->security->generateRandomString();
-        $user->status = 1; // 1 - активный, 0 - неактивный
-        $user->role = 'user'; // или 'admin', 'vendor' и т.д.
-        $user->vendor_name = 'gdsg'; // или название для вендора
-        $user->vendor_description = 'sgsgzsg'; // или описание для вендора
-
-        if ($user->save()) {
-            echo "Пользователь успешно создан с ID: " . $user->id;
-        } else {
-            echo "Ошибка при создании пользователя: " . print_r($user->errors, true);
-        }
 
         return $this->render('index');
     }
@@ -143,4 +129,24 @@ class SiteController extends Controller
     {
         return $this->render('about');
     }
+
+    public function actionTestOpensearch()
+    {
+        $_client = Yii::$app->opensearch->getClient();
+        $info = $_client->info();
+        return json_encode($info, JSON_PRETTY_PRINT);
+    }
+
+
+    public function actionTestRedis()
+    {
+        Yii::$app->cache->set('test_key', 'Hello Redis!', 60);
+        echo Yii::$app->cache->get('test_key');
+    }
+
+
+
+
+
+
 }

@@ -16,8 +16,51 @@ $config = [
             // !!! insert a secret key in the following (if it is empty) - this is required by cookie validation
             'cookieValidationKey' => 'wIfgF_wM2saVTt4r2IWoauf2GMz_LUGs',
         ],
+        'queue' => [
+            'class' =>' \yii\queue\redis\Queue',
+            'redis' => 'redis',         // Компонент подключения к Redis
+            'channel' => 'queue', // Название канала
+            'as log' => \yii\queue\LogBehavior::class,
+            'ttr' => 5 * 60, // Максимальное время выполнения задания
+            'attempts' => 3, // Максимальное количество попыток
+
+        ],
+
+
+        'opensearch' => [
+            'class' => 'app\components\OpenSearch',
+            'hosts' => ['http://localhost:9200'],
+            'index' => 'products',
+        ],
+        'rabbitmq' => [
+            'class' => 'app\components\RabbitMQ',
+            'host' => 'localhost',
+            'port' => 5672,
+            'user' => 'guest',
+            'password' => 'guest',
+            'vhost' => '/',
+        ],
+
+        'searchSynchronizer' => [
+            'class' => 'app\components\SearchSynchronizer',
+        ],
+        'productQueue' => [
+            'class' => 'app\components\ProductQueueComponent',
+        ],
+
+        'redis' => [
+            'class' => 'yii\redis\Connection',
+            'hostname' => 'localhost',  // или IP сервера Redis
+            'port' => 6379,
+            'database' => 0,
+            'connectionTimeout' => 2, // Таймаут подключения (сек)
+            'retries' => 3,
+
+        ],
+
         'cache' => [
-            'class' => 'yii\caching\FileCache',
+//            'class' => 'yii\caching\FileCache',
+            'class' => 'yii\redis\Cache',
         ],
         'user' => [
             'identityClass' => 'app\models\User',

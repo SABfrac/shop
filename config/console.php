@@ -17,6 +17,14 @@ $config = [
         'cache' => [
             'class' => 'yii\caching\FileCache',
         ],
+        'rabbitmq' => [
+            'class' => 'app\components\RabbitMQ',
+            'host' => 'localhost',
+            'port' => 5672,
+            'user' => 'guest',
+            'password' => 'guest',
+            'vhost' => '/',
+        ],
         'log' => [
             'targets' => [
                 [

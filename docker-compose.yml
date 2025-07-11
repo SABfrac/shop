@@ -4,17 +4,103 @@ services:
     command: [
       "postgres",
       "-c", "timezone=Europe/Moscow",
-      "-c", "log_timezone=Europe/Moscow"
+      "-c", "log_timezone=Europe/Moscow",
+      "-c", "listen_addresses=*" # Разрешаем подключения не только из контейнера
     ]
     container_name: yii2_pgs
     environment:
       POSTGRES_PASSWORD: root
       POSTGRES_USER: myuser
       POSTGRES_DB: mydb
+        # Autovacuum базовые настройки
+      PG_AUTOVACUUM: "on"
+      PG_AUTOVACUUM_MAX_WORKERS: "3"
+      PG_AUTOVACUUM_NAPTIME: "30s"
+      PG_AUTOVACUUM_VACUUM_SCALE_FACTOR: "0.1"
+      PG_AUTOVACUUM_VACUUM_THRESHOLD: "1000"
+      PG_MAINTENANCE_WORK_MEM: "128MB"
 
     ports:
       - "5432:5432"
     volumes:
       - pgdata:/var/lib/postgresql/data
+
+
+  opensearch:
+    image: opensearchproject/opensearch:latest
+    container_name: opensearch
+    environment:
+      - discovery.type=single-node
+      - bootstrap.memory_lock=true
+      - "OPENSEARCH_JAVA_OPTS=-Xms1g -Xmx1g"
+#      - plugins.security.disabled=true  # Отключаем security для разработки (опционально)
+      - OPENSEARCH_INITIAL_ADMIN_PASSWORD=StrongPassword123!
+      - DISABLE_SECURITY_PLUGIN=true
+
+    ulimits:
+      memlock:
+        soft: -1
+        hard: -1
+    ports:
+      - "9200:9200"
+      - "9600:9600"
+    volumes:
+      - opensearch-data:/usr/share/opensearch/data
+
+  opensearch-dashboards:
+      image: opensearchproject/opensearch-dashboards:latest
+      container_name: opensearch-dashboards
+      ports:
+        - "5601:5601"
+      environment:
+        OPENSEARCH_HOSTS: '["http://opensearch:9200"]'
+      depends_on:
+        - opensearch
+
+  rabbitmq:
+    image: rabbitmq:3-management
+    container_name: rabbitmq
+    environment:
+      RABBITMQ_DEFAULT_USER: guest
+      RABBITMQ_DEFAULT_PASS: guest
+    ports:
+      - "5672:5672"  # AMQP протокол
+      - "15672:15672"  # Веб-интерфейс управления
+    volumes:
+      - rabbitmq-data:/var/lib/rabbitmq
+
+
+#  redis:
+#    image: redis
+#    ports:
+#      - "6379:6379"
+#    volumes:
+#      - redis_data:/data
+#
+#  web:
+#      build: .
+#      ports:
+#        - "8080:80"
+#      depends_on:
+#        - redis
+
+
 volumes:
   pgdata:
+  opensearch-data:
+  rabbitmq-data:
+#  redis_data:
+
+#если контейнер запущен откроются ссылки
+#    RabbitMQ: http://localhost:15672
+#
+#    OpenSearch: http://localhost:9200
+#
+#    OpenSearch Dashboards: http://localhost:5601
+#
+#  из  приложения можно обращаться к rabbitmq по адресу rabbitmq:5672
+
+
+
+
+
