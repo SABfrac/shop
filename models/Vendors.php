@@ -65,4 +65,11 @@ class Vendors extends \yii\db\ActiveRecord
         return $this->hasMany(Products::class, ['vendor_id' => 'id']);
     }
 
+
+
+
+
+
+
+
 }

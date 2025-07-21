@@ -68,7 +68,9 @@ class AttributeOptions extends \yii\db\ActiveRecord
      *
      * @return \yii\db\ActiveQuery
      */
-    public function getAttribute()
+
+
+    public function getAttribute0()
     {
         return $this->hasOne(Attributes::class, ['id' => 'attribute_id']);
     }
@@ -84,6 +86,20 @@ class AttributeOptions extends \yii\db\ActiveRecord
     {
         return $this->hasMany(ProductAttributeValues::class, ['value_id' => 'id']);
     }
+
+
+
+
+
+
+
+
+
+
+
+
+
+
 
 
 }

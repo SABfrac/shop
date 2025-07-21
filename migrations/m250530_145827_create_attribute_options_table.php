@@ -43,9 +43,7 @@ class m250530_145827_create_attribute_options_table extends Migration
             'attribute_id'
         );
 
-        $this->createIndex('idx-product_attribute_values-attribute_id',
-            'product_attribute_values',
-            'attribute_id');
+
 
         $this->batchInsert('{{%attribute_options}}',
             ['attribute_id', 'value', 'slug', 'sort_order'],
@@ -460,12 +458,63 @@ class m250530_145827_create_attribute_options_table extends Migration
                 [46, 'Немецкий', 'german', 4],
                 [46, 'Французский', 'french', 5],
 
+                [49, 'Full HD (1920x1080)', 'full_hd', 1],
+                [49, '4K UHD (3840x2160)', '4k_uhd', 2],
+                [49, '8K UHD (7680x4320)', '8k_uhd', 3],
+                [49, 'Ultra HD (UHD)', 'ultra_hd', 4],
+                [49, 'HD (1280x720)', 'hd', 5],
+
+// Тип матрицы (attribute_id = 50)
+                [50, 'OLED', 'oled', 1],
+                [50, 'QLED', 'qled', 2],
+                [50, 'LED', 'led', 3],
+                [50, 'Mini-LED', 'mini_led', 4],
+                [50, 'MicroLED', 'microled', 5],
+                [50, 'NanoCell', 'nanocell', 6],
+
+// Smart TV (attribute_id = 51) - булево значение, но можно добавить варианты ОС
+                [51, 'Android TV', 'android_tv', 1],
+                [51, 'webOS', 'webos', 2],
+                [51, 'Tizen', 'tizen', 3],
+                [51, 'Google TV', 'google_tv', 4],
+                [51, 'Без Smart TV', 'no_smart_tv', 5],
+
+// HDR (attribute_id = 52)
+                [52, 'HDR10', 'hdr10', 1],
+                [52, 'HDR10+', 'hdr10_plus', 2],
+                [52, 'HLG', 'hlg', 3],
+                [52, 'Без HDR', 'no_hdr', 4],
+
+// Частота обновления (attribute_id = 53)
+                [53, '60 Гц', '60hz', 1],
+                [53, '120 Гц', '120hz', 2],
+                [53, '144 Гц', '144hz', 3],
+                [53, '240 Гц', '240hz', 4],
+
+// Поддержка Dolby Vision (attribute_id = 54)
+                [54, 'Есть', 'dolby_vision_yes', 1],
+                [54, 'Нет', 'dolby_vision_no', 2],
+
+// Количество HDMI-портов (attribute_id = 55)
+                [55, '1 порт', '1_hdmi', 1],
+                [55, '2 порта', '2_hdmi', 2],
+                [55, '3 порта', '3_hdmi', 3],
+                [55, '4 порта', '4_hdmi', 4],
+                [55, '5 портов', '5_hdmi', 5],
+
+// Количество USB-портов (attribute_id = 56)
+                [56, '1 порт', '1_usb', 1],
+                [56, '2 порта', '2_usb', 2],
+                [56, '3 порта', '3_usb', 3],
+                [56, '4 порта', '4_usb', 4],
+                [56, '5 портов', '5_usb', 5],
+                [56, '6 портов', '6_usb', 6],
+                [56, '7 портов', '7_usb', 7],
+                [56, '8 портов', '8_usb', 8],
+
 
             ]
         );
-
-
-
 
 
 
@@ -482,7 +531,7 @@ class m250530_145827_create_attribute_options_table extends Migration
 
         $this->execute('
     CREATE TRIGGER update_attribute_options_updated_at
-    BEFORE UPDATE ON brands
+    BEFORE UPDATE ON attribute_options
     FOR EACH ROW
         EXECUTE FUNCTION update_updated_at_column();
         ');

@@ -141,6 +141,14 @@ trait ProductDataPreparer
     }
 
 
+
+
+
+
+
+
+
+
 }
 
 // Основной метод для пачек

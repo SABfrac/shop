@@ -96,6 +96,20 @@ class m250528_190500_create_table_attributes_product_attribute_values_product_fl
             ['Поддерживаемые типы RAM', 'string', true, false],
         ];
 
+        //ТВ
+        $televisionAttributes = [
+                ['Разрешение', 'string', true, true],
+                ['Тип матрицы', 'string', true, true],
+                ['Smart TV', 'string', true, true],
+                ['HDR', 'string', true, false],
+                ['Частота обновления (Гц)', 'integer', true, false],
+                ['Габариты (ШxВxГ)', 'string', false, false],
+                ['Поддержка Dolby Vision', 'string', true, false],
+                ['Количество HDMI-портов', 'integer', false, false],
+                ['Количество USB-портов', 'integer', false, false],
+
+        ];
+
         // Собираем ВСЕ атрибуты в один массив
         $allAttributes = array_merge(
             $commonAttributes,
@@ -105,7 +119,8 @@ class m250528_190500_create_table_attributes_product_attribute_values_product_fl
             $autoElectricsAttributes,
             $householdPartsAttributes,
             $householdChemistryAttributes,
-            $booksMediaAttributes
+            $booksMediaAttributes,
+            $televisionAttributes
         );
 
         // Вставляем данные в таблицу `attributes`
@@ -116,27 +131,71 @@ class m250528_190500_create_table_attributes_product_attribute_values_product_fl
 
         $this->createIndex('idx-attributes-name', '{{%attributes}}', 'name');
 
-        // Значения атрибутов
         $this->createTable('product_attribute_values', [
             'id' => $this->primaryKey(),
             'product_id' => $this->integer()->notNull(),
             'attribute_id' => $this->integer()->notNull(),
-            'value_id' => $this->integer(),
+            'value_string' => $this->string()->null(),
+            'value_int' => $this->integer()->null(),
+            'value_float' => $this->float()->null(),
+            'value_bool' => $this->boolean()->null(),
+            'attribute_option_id' => $this->integer()->null(), // если значение из списка
+            'created_at' => $this->timestamp()->defaultExpression('CURRENT_TIMESTAMP'),
+            'updated_at' => $this->timestamp()->defaultExpression('CURRENT_TIMESTAMP'),
         ]);
+        $this->createIndex('idx-product_attribute_values-product_id', 'product_attribute_values', 'product_id');
+        $this->createIndex('idx-product_attribute_values-attribute_id', 'product_attribute_values', 'attribute_id');
+        $this->createIndex('idx-product_attribute_values-product_attribute', 'product_attribute_values', ['product_id', 'attribute_id']);
+
+
 
         // Денормализованная таблица для часто используемых атрибутов
         $this->createTable('product_flat', [
             'id' => $this->primaryKey(),
-            'product_id' => $this->integer()->notNull(),
+            'product_id'=> $this->integer()->notNull(),
+            'category_id' => $this->integer()->notNull(),
             'name' => $this->string()->notNull(),
             'price' => $this->decimal(10, 2)->notNull(),
             'brand_id' => $this->integer(),
-            'brand' => $this->string(),
-            'color' => $this->string(),
-            'size' => $this->string(),
+            'vendor_id' => $this->integer(),
+            'quantity' => $this->integer(),
+            'status' => $this->tinyInteger(),
+            'color' => $this->string(50),
+            'size' => $this->string(50),
             'weight' => $this->decimal(10, 2),
-            'search_vector' => 'tsvector',
+            'created_at' => $this->timestamp()->defaultExpression('CURRENT_TIMESTAMP'),
+            'updated_at' => $this->timestamp()->defaultExpression('CURRENT_TIMESTAMP'),
+
         ]);
+
+        $this->createIndex('idx_product_flat_product_id', 'product_flat', 'product_id');
+        $this->createIndex('idx_product_flat_category_id', 'product_flat', 'category_id');
+        $this->createIndex('idx_product_flat_price', 'product_flat', 'price');
+
+
+        $this->execute("
+        CREATE OR REPLACE FUNCTION update_updated_at_column()
+        RETURNS TRIGGER AS $$
+        BEGIN
+            NEW.updated_at = NOW();
+            RETURN NEW;
+        END;
+        $$ language 'plpgsql';
+    ");
+
+        // Триггер для обновления updated_at
+        $this->execute("
+        CREATE TRIGGER trigger_update_updated_at
+        BEFORE UPDATE ON product_flat
+        FOR EACH ROW
+        EXECUTE PROCEDURE update_updated_at_column();
+    ");
+        $this->execute("
+        CREATE TRIGGER trigger_update_product_attribute_values_updated_at
+        BEFORE UPDATE ON product_attribute_values
+        FOR EACH ROW
+        EXECUTE PROCEDURE update_updated_at_column();
+");
 
 
     }

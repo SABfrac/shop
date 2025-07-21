@@ -1,31 +1,21 @@
 <?php
 
 namespace app\models;
-use yii\base\BaseObject;
-use app\models\Brands;
-use app\jobs\PrepareAndSyncProductJob;
-use yii\caching\TagDependency;
-
-
 
 use Yii;
-
 
 /**
  * This is the model class for table "products".
  *
  * @property int $id
- * @property int $vendor_id
- * @property int $category_id
  * @property string $name
- * @property string|null $slug
+ * @property int $category_id
  * @property string|null $description
- * @property float $price
+ * @property int|null $brand_id
+ * @property string|null $slug
  * @property int|null $status
- * @property int|null $quantity
  * @property string|null $created_at
  * @property string|null $updated_at
- * @property int|null $brand_id
  */
 class Products extends \yii\db\ActiveRecord
 {
@@ -45,14 +35,12 @@ class Products extends \yii\db\ActiveRecord
     public function rules()
     {
         return [
-            [['slug', 'description', 'brand_id'], 'default', 'value' => null],
+            [['description', 'brand_id', 'slug'], 'default', 'value' => null],
             [['status'], 'default', 'value' => 10],
-            [['quantity'], 'default', 'value' => 0],
-            [['vendor_id', 'category_id', 'name', 'price'], 'required'],
-            [['vendor_id', 'category_id', 'status', 'quantity', 'brand_id'], 'default', 'value' => null],
-            [['vendor_id', 'category_id', 'status', 'quantity', 'brand_id'], 'integer'],
+            [['name', 'category_id'], 'required'],
+            [['category_id', 'brand_id', 'status'], 'default', 'value' => null],
+            [['category_id', 'brand_id', 'status'], 'integer'],
             [['description'], 'string'],
-            [['price'], 'number'],
             [['created_at', 'updated_at'], 'safe'],
             [['name', 'slug'], 'string', 'max' => 255],
         ];
@@ -65,29 +53,18 @@ class Products extends \yii\db\ActiveRecord
     {
         return [
             'id' => 'ID',
-            'vendor_id' => 'Vendor ID',
-            'category_id' => 'Category ID',
             'name' => 'Name',
-            'slug' => 'Slug',
+            'category_id' => 'Category ID',
             'description' => 'Description',
-            'price' => 'Price',
+            'brand_id' => 'Brand ID',
+            'slug' => 'Slug',
             'status' => 'Status',
-            'quantity' => 'Quantity',
             'created_at' => 'Created At',
             'updated_at' => 'Updated At',
-            'brand_id' => 'Brand ID',
         ];
     }
 
 
-
-
-
-
-
-
-
-    // Связь с вендором
     public function getVendor()
     {
         return $this->hasOne(Vendors::class, ['id' => 'vendor_id']);

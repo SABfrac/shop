@@ -2,8 +2,6 @@
 
 namespace app\models;
 
-use app\models\Products;
-
 use Yii;
 
 /**
@@ -13,6 +11,7 @@ use Yii;
  * @property string $name
  * @property string|null $description
  * @property string|null $logo
+ * @property int|null $status
  * @property string|null $created_at
  * @property string|null $updated_at
  */
@@ -35,8 +34,11 @@ class Brands extends \yii\db\ActiveRecord
     {
         return [
             [['description', 'logo'], 'default', 'value' => null],
+            [['status'], 'default', 'value' => 1],
             [['name'], 'required'],
             [['description'], 'string'],
+            [['status'], 'default', 'value' => null],
+            [['status'], 'integer'],
             [['created_at', 'updated_at'], 'safe'],
             [['name', 'logo'], 'string', 'max' => 255],
             [['name'], 'unique'],
@@ -53,16 +55,15 @@ class Brands extends \yii\db\ActiveRecord
             'name' => 'Name',
             'description' => 'Description',
             'logo' => 'Logo',
+            'status' => 'Status',
             'created_at' => 'Created At',
             'updated_at' => 'Updated At',
         ];
     }
 
-
     public function getProducts()
     {
         return $this->hasMany(Products::class, ['brand_id' => 'id']);
     }
-
 
 }

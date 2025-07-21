@@ -11,26 +11,37 @@ class m250528_124517_create_table_vendors_products extends Migration
     {
         $this->createTable('vendors', [
             'id' => $this->primaryKey(),
-            'name' => $this->string()->notNull(),
+            'company_name' => $this->string()->notNull(),
             'email' => $this->string()->notNull()->unique(),
             'status' => $this->smallInteger()->defaultValue(10),
+            'balance' => $this->decimal(15, 2)->defaultValue(0),
             'created_at' => $this->timestamp()->defaultExpression('CURRENT_TIMESTAMP'),
+            'updated_at' => $this->timestamp()->defaultExpression('CURRENT_TIMESTAMP'),
         ]);
+
+        $this->createIndex('idx-vendors-status', 'vendors', 'status');
+        $this->createIndex('idx-vendors-company_name', 'vendors', 'company_name');
 
         // Таблица товаров
         $this->createTable('products', [
             'id' => $this->primaryKey(),
-            'vendor_id' => $this->integer()->notNull(),
-            'category_id' => $this->integer()->notNull(),
             'name' => $this->string()->notNull(),
-            'slug' => $this->string(),
+            'category_id' => $this->integer()->notNull(),
             'description' => $this->text(),
-            'price' => $this->decimal(10, 2)->notNull(),
+            'brand_id'=> $this->integer()->null(),
+            'slug' => $this->string(),
             'status' => $this->smallInteger()->defaultValue(10),
-            'quantity' => $this->integer()->defaultValue(0),
+
             'created_at' => $this->timestamp()->defaultExpression('CURRENT_TIMESTAMP'),
             'updated_at' => $this->timestamp()->defaultExpression('CURRENT_TIMESTAMP'),
         ]);
+
+        // Индексы для ускорения поиска
+
+        $this->createIndex('idx-products-brand_id', 'products', 'brand_id');
+
+
+
 
         $this->execute('
         CREATE OR REPLACE FUNCTION update_updated_at()
@@ -48,10 +59,24 @@ class m250528_124517_create_table_vendors_products extends Migration
     FOR EACH ROW
     EXECUTE FUNCTION update_updated_at();
 ');
+        $this->execute('
+    CREATE TRIGGER update_vendors_updated_at
+    BEFORE UPDATE ON vendors
+    FOR EACH ROW
+    EXECUTE FUNCTION update_updated_at();
+');
 
-   
 
-
+////         Создаем внешний ключ
+//        $this->addForeignKey(
+//            'fk_products_brands',
+//            'products',
+//            'brand_id',
+//            'brands',
+//            'id',
+//            'SET NULL', // или 'CASCADE' в зависимости от логики
+//            'CASCADE'
+//        );
 
 
     }
@@ -61,6 +86,7 @@ class m250528_124517_create_table_vendors_products extends Migration
      */
     public function safeDown()
     {
+//        $this->dropForeignKey('fk_products_brands', 'products');
         $this->dropTable('products');
         $this->dropTable('vendors');
 

@@ -27,7 +27,7 @@ class VendorProductController extends Controller
 
             Yii::$app->productQueue->enqueueBulkProduct($payload);
             // Сериализуем и отправляем в очередь
-            Yii::$app->rabbitMQ->publish(json_encode($payload), 'vendor_products_queue');
+
 
             return $this->asJson(['status' => 'ok', 'message' => 'Товар поставлен в очередь на обработку.']);
 

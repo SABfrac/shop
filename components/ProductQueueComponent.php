@@ -1,15 +1,24 @@
 <?php
+
 namespace app\components;
 
 use yii\base\Component;
 use yii;
+use app\models\FallbackProductBuffer;
 
 class ProductQueueComponent extends Component
 {
-    const SYNC_QUEUE = 'vendor_products_queue';
-    const SYNC_RETRY_EXCHANGE = 'vendor_products.retry';
 
-    const SYNC_RETRY_ROUTING_KEY = 'vendor_products.retry';
+
+// Очереди для операций
+    const INSERT_QUEUE = 'product_insert_queue';
+    const INSERT_RETRY_EXCHANGE = 'product_insert.retry';
+    const INSERT_RETRY_ROUTING_KEY = 'product_insert.retry';
+
+    const UPDATE_QUEUE = 'product_update_queue';
+    const UPDATE_RETRY_EXCHANGE = 'product_update.retry';
+    const UPDATE_RETRY_ROUTING_KEY = 'product_update.retry';
+
 
     const INDEX_QUEUE = 'vendor_products_index';
     const INDEX_RETRY_EXCHANGE = 'vendor_products_index.retry';
@@ -17,32 +26,45 @@ class ProductQueueComponent extends Component
 
     private $batch = [];
     private $batchSize = 50; // Количество сообщений в батче
-    private $autoFlushInterval = 5; // Автоотправка каждые N секунд, если батч не заполнен
+    private $autoFlushInterval = 2; // Автоотправка каждые N секунд, если батч не заполнен
     private $lastFlushTime;
 
+    const INSERT_BUFFER_KEY = 'product_buffer:insert';
+    const UPDATE_BUFFER_KEY = 'product_buffer:update';
 
 
     public function init()
     {
         parent::init();
-
-
-        $this->setupSyncQueue();
+        $this->lastFlushTime = time();
+        $this->setupInsertQueue();
+        $this->setupUpdateQueue();
         $this->setupIndexQueue();
 
     }
 
-
-    protected function setupSyncQueue()
+    protected function setupInsertQueue()
     {
         Yii::$app->rabbitmq->declareRetryQueue(
-            self::SYNC_QUEUE,
-            self::SYNC_RETRY_EXCHANGE,
-            self::SYNC_RETRY_ROUTING_KEY,
+            self::INSERT_QUEUE,
+            self::INSERT_RETRY_EXCHANGE,
+            self::INSERT_RETRY_ROUTING_KEY,
             3,
             10000
         );
     }
+
+    protected function setupUpdateQueue()
+    {
+        Yii::$app->rabbitmq->declareRetryQueue(
+            self::UPDATE_QUEUE,
+            self::UPDATE_RETRY_EXCHANGE,
+            self::UPDATE_RETRY_ROUTING_KEY,
+            3,
+            10000
+        );
+    }
+
 
     protected function setupIndexQueue()
     {
@@ -56,47 +78,77 @@ class ProductQueueComponent extends Component
     }
 
 
-
     public function enqueueBulkProduct($productData)
     {
-        $this->batch[] = [
-            'seller_id' => Yii::$app->user->id,
-            'products' => $productData,
-            'created_at' => time()
-        ];
 
-        if (count($this->batch) >= $this->batchSize||
-            (time() - $this->lastFlushTime) > $this->autoFlushInterval) {
-            $this->flushBatchWithRetry();
-            $this->lastFlushTime = time();
+        $insertPayloads = [];
+        $updatePayloads = [];
+        $now = time();
+
+        foreach ($productData as $product) {
+            $item = [
+                'seller_id' => Yii::$app->user->id,
+                'product' => $product,
+                'created_at' => $now
+            ];
+
+            empty($product['id']) ? $insertPayloads[] = $item : $updatePayloads[] = $item;
         }
+        try {
 
-        return true;
+            if (!empty($insertPayloads)) {
+                $jsonPayloads = array_map('json_encode', $insertPayloads);
+                Yii::$app->redis->rpush(self::INSERT_BUFFER_KEY, ...$jsonPayloads);
+            }
+            if (!empty($updatePayloads)) {
+                $jsonPayloads = array_map('json_encode', $updatePayloads);
+                Yii::$app->redis->rpush(self::UPDATE_BUFFER_KEY, ...$jsonPayloads);
+            }
+        } catch (\Exception $e) {
+            Yii::error("Redis unavailable: " . $e->getMessage());
+            // Fallback: сохраняем в БД
+            $this->saveToFallbackDb($insertPayloads, $updatePayloads);
+        }
     }
 
+    private function saveToFallbackDb($insertPayloads, $updatePayloads)
+    {
+        foreach ($insertPayloads as $item) {
+            $model = new FallbackProductBuffer();
+            $model->type = 'insert';
+            $model->payload = json_encode($item);
+            $model->created_at = time();
+            $model->save(false);
+        }
+        foreach ($updatePayloads as $item) {
+            $model = new FallbackProductBuffer();
+            $model->type = 'update';
+            $model->payload = json_encode($item);
+            $model->created_at = time();
+            $model->save(false);
+        }
+
+    }
 
     /**
-     * Принудительная отправка накопленных сообщений с переотправкой до 3 раз
+     * Периодически (или по событию) отдельный процесс должен проверять, есть ли записи в fallback_product_buffer,
+     * и отправить в Redis, когда он снова доступен
      */
-    public function flushBatchWithRetry()
+
+    public function actionRetryFallback()
     {
-        try {
-            Yii::$app->rabbitmq->publishWithRetries(
-                self::SYNC_QUEUE,
-                $this->batch,
-                ['x-retry-count' => 0]
-            );
-            $this->batch = []; // Очищаем буфер
-        } catch (\Throwable $e) {
-            Yii::error("Failed to flush batch: " . $e->getMessage());
-            // Можно добавить повторную попытку или логику восстановления
+        $items = FallbackProductBuffer::find()->limit(100)->all();
+        foreach ($items as $item) {
+            try {
+                $key = $item->type === 'insert' ? self::INSERT_BUFFER_KEY : self::UPDATE_BUFFER_KEY;
+                Yii::$app->redis->rpush($key, $item->payload);
+                $item->delete();
+            } catch (\Exception $e) {
+                Yii::error("Retry to Redis failed: " . $e->getMessage());
+                // Оставляем запись для следующей попытки
+            }
         }
+
+
     }
-
-
-
-
-
-
-
 }

@@ -27,6 +27,7 @@ $config = [
         ],
 
 
+
         'opensearch' => [
             'class' => 'app\components\OpenSearch',
             'hosts' => ['http://localhost:9200'],

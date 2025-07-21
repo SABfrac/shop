@@ -5,7 +5,7 @@ use yii\db\Migration;
 /**
  * Handles the creation of table `{{%categories}}`.
  */
-class m250528_081533_create_categories_table extends Migration
+class m250528_081533_create_categories_brands_table extends Migration
 {
     /**
      * {@inheritdoc}
@@ -542,6 +542,22 @@ $this->batchInsert('{{%categories}}',
             ]
         );
 
+        // Создаем таблицу брендов
+        $this->createTable('brands', [
+            'id' => $this->primaryKey(),
+            'name' => $this->string(255)->notNull()->unique(),
+            'description' => $this->text(), // Описание бренда
+            'logo' => $this->string(255), // Путь к логотипу
+            'status' => $this->smallInteger()->defaultValue(1),
+            'created_at' => $this->timestamp()->defaultExpression('CURRENT_TIMESTAMP'),
+            'updated_at' => $this->timestamp()->defaultExpression('CURRENT_TIMESTAMP'),
+        ]);
+
+
+
+
+
+
 
 
 
@@ -564,6 +580,12 @@ $this->batchInsert('{{%categories}}',
         FOR EACH ROW
         EXECUTE FUNCTION update_updated_at();
     ');
+        $this->execute('
+       CREATE TRIGGER update_brands_updated_at
+       BEFORE UPDATE ON brands
+       FOR EACH ROW
+       EXECUTE FUNCTION update_updated_at();
+');
 
     }
 
@@ -573,6 +595,7 @@ $this->batchInsert('{{%categories}}',
     public function safeDown()
     {
 
+        $this->dropTable('brands');
         $this->execute('DROP TRIGGER IF EXISTS categories_updated_at_trigger ON "categories";');
         $this->execute('DROP FUNCTION IF EXISTS update_updated_at();');
         $this->dropTable('{{%categories}}');
