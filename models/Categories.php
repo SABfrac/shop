@@ -3,7 +3,8 @@
 namespace app\models;
 
 use Yii;
-use app\models\Products;
+
+use app\traits\SaveOrFailTrait;
 
 /**
  * This is the model class for table "categories".
@@ -16,6 +17,7 @@ use app\models\Products;
  * @property string|null $image
  * @property int|null $sort_order
  * @property int|null $status
+ * @property bool|null $is_leaf
  * @property string $created_at
  * @property string $updated_at
  *
@@ -25,7 +27,7 @@ use app\models\Products;
 class Categories extends \yii\db\ActiveRecord
 {
 
-
+use SaveOrFailTrait;
     /**
      * {@inheritdoc}
      */
@@ -97,7 +99,42 @@ class Categories extends \yii\db\ActiveRecord
     // Связь с продуктами
     public function getProducts()
     {
-        return $this->hasMany(Products::class, ['category_id' => 'id']);
+        return $this->hasMany(GlobalProducts::class, ['category_id' => 'id']);
+    }
+
+//    public function getAttributes()
+//    {
+//        return $this->hasMany(Attributes::class, ['id' => 'attribute_id'])
+//            ->viaTable('category_attributes', ['category_id' => 'id']);
+//    }
+
+
+    public function getCategories()
+    {
+        return $this->hasMany(Categories::class, ['id' => 'category_id'])
+            ->viaTable('category_attributes', ['attribute_id' => 'id']);
+    }
+
+    /**
+     * получаем все бренды категории
+     */
+    public function getBrands()
+    {
+        return $this->hasMany(Brands::class, ['id' => 'brand_id'])
+            ->viaTable('{{%brand_category}}', ['category_id' => 'id']);
+    }
+
+
+    public function getFeedAttributeSchema(): array
+    {
+        return Attributes::find()
+            ->select('name')
+            ->innerJoin('category_attributes ca', 'ca.attribute_id = id')
+            ->where([
+                'ca.category_id' => $this->id,
+                'ca.is_variant' => true,
+            ])
+            ->column();
     }
 
 }

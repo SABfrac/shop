@@ -23,7 +23,9 @@
         "symfony/http-client": "^7.3",
         "php-amqplib/php-amqplib": "^3.7",
         "yiisoft/yii2-queue": "^2.3",
-        "yiisoft/yii2-redis": "^2.0"
+        "yiisoft/yii2-redis": "^2.0",
+        "firebase/php-jwt": "^6.11",
+        "aws/aws-sdk-php": "^3.369"
     },
     "require-dev": {
         "yiisoft/yii2-debug": "~2.1.0",
@@ -35,6 +37,11 @@
         "codeception/module-yii2": "^1.1",
         "codeception/module-filesystem": "^3.0 || ^2.0 || ^1.1",
         "codeception/verify": "^3.0 || ^2.2"
+    },
+    "autoload": {
+        "psr-4": {
+            "app\\": ""
+        }
     },
     "config": {
         "allow-plugins": {

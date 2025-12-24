@@ -12,15 +12,18 @@ class m250528_081533_create_categories_brands_table extends Migration
      */
     public function safeUp()
     {
+        $this->execute('CREATE EXTENSION IF NOT EXISTS citext');
+
         $this->createTable('{{%categories}}', [
             'id' => $this->primaryKey(),
             'parent_id' => $this->integer()->null(),
-            'name' => $this->string(255)->notNull(),
+            'name' => 'citext NOT NULL',
             'slug' => $this->string(255)->notNull()->unique(),
             'description' => $this->text()->null(),
             'image' => $this->string(255)->null(),
             'sort_order' => $this->integer()->defaultValue(0),
             'status' => $this->smallInteger()->defaultValue(1),
+            'is_leaf' => $this->boolean()->notNull()->defaultValue(true)->comment('true — лист, false — есть дочерние'),
             'created_at' => $this->timestamp()->notNull()->defaultExpression('CURRENT_TIMESTAMP'),
             'updated_at' => $this->timestamp()->notNull()->defaultExpression('CURRENT_TIMESTAMP')
         ] );
@@ -71,11 +74,12 @@ class m250528_081533_create_categories_brands_table extends Migration
             [
                 [$electronicsId, 'Смартфоны', 'smartphones', 'Смартфоны и мобильные телефоны', 1100, $currentTime, $currentTime],
                 [$electronicsId, 'Ноутбуки', 'laptops', 'Ноутбуки и ультрабуки', 1200, $currentTime, $currentTime],
-                [$electronicsId, 'Компьютерные комплектующие', 'computer-parts', 'Процессоры, видеокарты, материнские платы и другие комплектующие', 1300, $currentTime, $currentTime],
-                [$electronicsId, 'Телевизоры', 'tvs', 'Телевизоры и мониторы', 1400, $currentTime, $currentTime],
-                [$electronicsId, 'Фототехника', 'photo', 'Фотоаппараты и объективы', 1500, $currentTime, $currentTime],
-                [$electronicsId, 'Аудиотехника', 'audio', 'Наушники, колонки и аудиосистемы', 1600, $currentTime, $currentTime],
-                [$electronicsId, 'Игровые консоли', 'gaming', 'Игровые приставки и аксессуары', 1700, $currentTime, $currentTime],
+                [$electronicsId, 'Компьютерные комплектующие ', 'computer-parts', 'Процессоры, видеокарты, материнские платы и другие комплектующие ', 1300, $currentTime, $currentTime],
+                [$electronicsId, 'Компьютерная периферия', 'computer-periphery', 'Мониторы, клавиатуры, мыши и другие устройства', 1400, $currentTime, $currentTime],
+                [$electronicsId, 'Телевизоры', 'tvs', 'Телевизоры и мониторы', 1500, $currentTime, $currentTime],
+                [$electronicsId, 'Фототехника', 'photo', 'Фотоаппараты и объективы', 1600, $currentTime, $currentTime],
+                [$electronicsId, 'Аудиотехника', 'audio', 'Наушники, колонки и аудиосистемы', 1700, $currentTime, $currentTime],
+                [$electronicsId, 'Игровые консоли', 'gaming', 'Игровые приставки и аксессуары', 1800, $currentTime, $currentTime],
             ]
         );
 
@@ -96,6 +100,32 @@ $this->batchInsert('{{%categories}}',
         [$computerPartsId, 'Охлаждение', 'cooling', 'Системы охлаждения для ПК', 1380, $currentTime, $currentTime],
     ]
 );
+
+        $peripheryId = $this->getDb()->createCommand("SELECT id FROM {{%categories}} WHERE slug = 'computer-periphery'")->queryScalar();
+
+// Вставляем подкатегории периферии с шагом 10 в диапазоне 1410-1490
+        $this->batchInsert('{{%categories}}',
+            ['parent_id', 'name', 'slug', 'description', 'sort_order', 'created_at', 'updated_at'],
+            [
+                [$peripheryId, 'Мониторы', 'monitors', 'Компьютерные мониторы', 1410, $currentTime, $currentTime],
+                [$peripheryId, 'Клавиатуры', 'keyboards', 'Клавиатуры всех типов', 1420, $currentTime, $currentTime],
+                [$peripheryId, 'Мыши', 'mice', 'Компьютерные мыши', 1430, $currentTime, $currentTime],
+                [$peripheryId, 'Комплекты клавиатура+мышь', 'keyboard-mouse-sets', 'Готовые комплекты', 1440, $currentTime, $currentTime],
+                [$peripheryId, 'Игровые наборы', 'gaming-sets', 'Игровая периферия', 1450, $currentTime, $currentTime],
+                [$peripheryId, 'Коврики для мыши', 'mouse-pads', 'Коврики разных размеров', 1460, $currentTime, $currentTime],
+                [$peripheryId, 'Микрофоны', 'microphones', 'Компьютерные микрофоны', 1470, $currentTime, $currentTime],
+                [$peripheryId, 'Наушники и гарнитуры', 'headsets', 'Аудиоустройства', 1480, $currentTime, $currentTime],
+                [$peripheryId, 'Колонки', 'speakers', 'Акустические системы', 1490, $currentTime, $currentTime],
+                // Дополнительные категории с шагом 10 (если нужно больше)
+                [$peripheryId, 'Графические планшеты', 'graphic-tablets', 'Устройства для рисования', 1411, $currentTime, $currentTime],
+                [$peripheryId, 'Внешние накопители', 'external-storage', 'Внешние HDD/SSD', 1412, $currentTime, $currentTime],
+                [$peripheryId, 'Веб-камеры', 'webcams', 'Камеры для видеосвязи', 1413, $currentTime, $currentTime],
+                [$peripheryId, 'Док-станции', 'docking-stations', 'Портовые расширители', 1414, $currentTime, $currentTime],
+                [$peripheryId, 'Кабели и адаптеры', 'cables-adapters', 'Соединительные элементы', 1415, $currentTime, $currentTime],
+            ]
+        );
+
+
 
 
         // Вставляем подкатегории для Одежды
@@ -541,24 +571,76 @@ $this->batchInsert('{{%categories}}',
                 [$maintenanceId, 'Фильтры для ТО', 'maintenance-filters', 10109, $currentTime, $currentTime]
             ]
         );
+        $parentIds = (new \yii\db\Query())
+            ->select('parent_id')
+            ->from('{{%categories}}')
+            ->where('parent_id IS NOT NULL')
+            ->groupBy('parent_id')
+            ->column();
+
+// Сбрасываем признак у всех категорий-родителей
+        if (!empty($parentIds)) {
+            $this->update('{{%categories}}', ['is_leaf' => false], ['id' => $parentIds]);
+        }
 
         // Создаем таблицу брендов
         $this->createTable('brands', [
             'id' => $this->primaryKey(),
-            'name' => $this->string(255)->notNull()->unique(),
+            'name' => 'citext  NULL',
             'description' => $this->text(), // Описание бренда
             'logo' => $this->string(255), // Путь к логотипу
             'status' => $this->smallInteger()->defaultValue(1),
             'created_at' => $this->timestamp()->defaultExpression('CURRENT_TIMESTAMP'),
             'updated_at' => $this->timestamp()->defaultExpression('CURRENT_TIMESTAMP'),
         ]);
+        $this->createIndex('uidx_brands_name', 'brands', 'name',true );
+//        $this->execute(<<<'SQL'
+//CREATE UNIQUE INDEX CONCURRENTLY ux_brands_name_norm
+//ON brands (
+//  (regexp_replace(btrim(translate(name::text, '‐‑‒–—−', '-')), '\s+', ' ', 'g'))::citext
+//);
+//SQL
+//        );
 
+        $this->batchInsert('brands',
+            ['name', 'description', 'logo', 'status'],
+            [
+                // Электроника и гаджеты
+                ['Apple', 'Американская корпорация, производитель персональных и планшетных компьютеров, аудиоплееров, телефонов, программного обеспечения', 'brands/apple.png', 1],
+                ['Samsung', 'Южнокорейская группа компаний, один из крупнейших производителей электроники и бытовой техники', 'brands/samsung.png', 1],
+                ['Xiaomi', 'Китайская компания, производитель электроники и бытовой техники', 'brands/xiaomi.png', 1],
+                ['Huawei', 'Китайская компания, производитель телекоммуникационного оборудования и электроники', 'brands/huawei.png', 1],
+                ['Sony', 'Японская компания, производитель электроники, игровых консолей и развлекательного контента', 'brands/sony.png', 1],
 
+                // Одежда и обувь
+                ['Nike', 'Американская компания, производитель спортивной одежды, обуви и аксессуаров', 'brands/nike.png', 1],
+                ['Adidas', 'Немецкая компания, производитель спортивной одежды и обуви', 'brands/adidas.png', 1],
+                ['Zara', 'Испанская компания, производитель модной одежды', 'brands/zara.png', 1],
+                ['H&M', 'Шведская компания, производитель модной одежды', 'brands/hm.png', 1],
+                ['Reebok', 'Производитель спортивной одежды и обуви', 'brands/reebok.png', 1],
 
+                // Бытовая техника
+                ['Bosch', 'Немецкая компания, производитель бытовой и промышленной техники', 'brands/bosch.png', 1],
+                ['LG', 'Южнокорейская компания, производитель электроники и бытовой техники', 'brands/lg.png', 1],
+                ['Philips', 'Нидерландская компания, производитель электроники и медицинского оборудования', 'brands/philips.png', 1],
+                ['Indesit', 'Производитель бытовой техники', 'brands/indesit.png', 1],
+                ['Whirlpool', 'Американская компания, производитель бытовой техники', 'brands/whirlpool.png', 1],
 
+                // Косметика и парфюмерия
+                ['L\'Oreal', 'Французская компания, производитель косметики и парфюмерии', 'brands/loreal.png', 1],
+                ['Nivea', 'Немецкая компания, производитель косметики по уходу за кожей', 'brands/nivea.png', 1],
+                ['Maybelline', 'Производитель декоративной косметики', 'brands/maybelline.png', 1],
+                ['Garnier', 'Французская компания, производитель косметики по уходу за кожей и волосами', 'brands/garnier.png', 1],
+                ['Dove', 'Производитель косметики по уходу за кожей и волосами', 'brands/dove.png', 1],
 
-
-
+                // Автомобильные бренды
+                ['Toyota', 'Японская автомобильная компания', 'brands/toyota.png', 1],
+                ['Ford', 'Американская автомобильная компания', 'brands/ford.png', 1],
+                ['BMW', 'Немецкая автомобильная компания', 'brands/bmw.png', 1],
+                ['Mercedes-Benz', 'Немецкая автомобильная компания', 'brands/mercedes.png', 1],
+                ['Audi', 'Немецкая автомобильная компания', 'brands/audi.png', 1],
+            ]
+        );
 
 
 
@@ -587,6 +669,9 @@ $this->batchInsert('{{%categories}}',
        EXECUTE FUNCTION update_updated_at();
 ');
 
+
+        $this->execute("CREATE SEQUENCE sku_code_seq START 1");
+
     }
 
     /**
@@ -594,7 +679,7 @@ $this->batchInsert('{{%categories}}',
      */
     public function safeDown()
     {
-
+        $this->execute("DROP SEQUENCE IF EXISTS sku_code_seq");
         $this->dropTable('brands');
         $this->execute('DROP TRIGGER IF EXISTS categories_updated_at_trigger ON "categories";');
         $this->execute('DROP FUNCTION IF EXISTS update_updated_at();');

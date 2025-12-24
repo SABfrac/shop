@@ -12,6 +12,8 @@ use Yii;
 class RabbitMQ extends Component
 {
 
+
+
     public $host;
     public $port;
     public $user;
@@ -23,6 +25,9 @@ class RabbitMQ extends Component
      */
     private $connection;
     private $channels = [];
+
+    const EXCHANGE_RETRY = 'feed.retry';
+
 
 
 
@@ -97,13 +102,14 @@ class RabbitMQ extends Component
     /**
      * Объявляет очередь с DLX политикой для повторных попыток
      */
-    public function declareRetryQueue($queueName, $retryExchange, $retryRoutingKey, $maxRetries = 3, $delay = 10000)
+    public function declareRetryQueue($queueName,  $maxRetries = 3, $delay = 10000)
     {
         $channel = $this->getChannel('setup');
+        $retryRoutingKey = $queueName;
 
         // Аргументы для основной очереди
         $args = new \PhpAmqpLib\Wire\AMQPTable([
-            'x-dead-letter-exchange' => $retryExchange,
+            'x-dead-letter-exchange' => self::EXCHANGE_RETRY,
             'x-dead-letter-routing-key' => $retryRoutingKey,
             'x-max-priority' => 10 // Поддержка приоритетов
         ]);
@@ -141,7 +147,8 @@ class RabbitMQ extends Component
 
         // Объявляем обменник для retry
         $channel->exchange_declare(
-            $retryExchange,
+
+            self::EXCHANGE_RETRY,
             'direct',
             false,  // passive
             true,   // durable
@@ -149,7 +156,7 @@ class RabbitMQ extends Component
         );
 
         // Привязываем retry очередь к обменнику
-        $channel->queue_bind($retryQueueName, $retryExchange, $retryRoutingKey);
+        $channel->queue_bind($retryQueueName, self::EXCHANGE_RETRY, $retryRoutingKey);
     }
 
 
@@ -190,6 +197,17 @@ class RabbitMQ extends Component
 
         $channel->publish_batch();
 
+        //механизм если RabbitMQ упадёт сразу после получения, но до записи на диск(подтверждение от rabbitMQ)
+        // снижает пролизводительность но гарантирует
+//        try {
+//            $channel->wait_for_pending_acks_returns(); // Ждёт все ack/nack
+//        } catch (\PhpAmqpLib\Exception\AMQPChannelClosedException $e) {
+//            // Канал закрыт — возможно, потеря соединения
+//            throw new \RuntimeException("RabbitMQ channel closed during publish: " . $e->getMessage(), 0, $e);
+//        } catch (\Exception $e) {
+//            throw new \RuntimeException("Failed to get publisher confirm: " . $e->getMessage(), 0, $e);
+//        }
+
     }
 
     /**
@@ -224,7 +242,7 @@ class RabbitMQ extends Component
 
 
 
-    public function consumeWithRetry($queueName, callable $callback, $prefetchCount = 30)
+    public function consumeWithRetry($queueName, callable $callback, $prefetchCount = 30, $maxRetries = 3)
     {
         $channel = $this->getChannel('consume');
 
@@ -238,7 +256,13 @@ class RabbitMQ extends Component
             false, // no_ack
             false, // exclusive
             false, // nowait
-            function (AMQPMessage $msg) use ($callback) {
+            function (AMQPMessage $msg) use ($callback,$queueName, $maxRetries) {
+
+                $headers = [];
+                if ($msg->has('application_headers')) {
+                    $headers = $msg->get('application_headers')->getNativeData();
+                }
+                $retryCount = (int) ($headers['x-retry-count'] ?? 0);
                 try {
                     // Вызываем пользовательский callback
                     $result = $callback($msg);
@@ -246,8 +270,7 @@ class RabbitMQ extends Component
                     if ($result !== false) {
                         $msg->ack();
                     } else {
-                        // Если callback вернул false, отправляем сообщение в retry очередь
-                        $msg->nack(false);
+                        $this->handleRetryOrDlq($msg, $queueName, $retryCount, $maxRetries);
                     }
                 } catch (\Throwable $e) {
                     Yii::error("Error processing message: " . $e->getMessage());
@@ -258,7 +281,7 @@ class RabbitMQ extends Component
 
         try {
             while ($channel->is_consuming()) {
-                $channel->wait(null, false, 6.0);
+                $channel->wait();
             }
         } catch (\Throwable $e) {
             Yii::error("Consume error: " . $e->getMessage());
@@ -289,5 +312,107 @@ class RabbitMQ extends Component
 
 
 
+        /**
+         * метод без очередей для отладки
+         */
 
+    public function consume($queueName, callable $callback)
+    {
+        $channel = $this->getChannel('consume');
+        $channel->basic_consume($queueName,
+            '',
+            false,
+            false,
+            false,
+            false,
+            function ($msg) use ($callback) {
+                try {
+                    $result = $callback($msg);
+                    if ($result === false) {
+                        $msg->nack(false, false); // reject, не requeue
+                    } else {
+                        $msg->ack(); // подтверждаем вручную
+                    }
+                } catch (\Throwable $e) {
+                    Yii::error("Unhandled exception in consume: " . $e->getMessage() . "\n" . $e->getTraceAsString());
+                    $msg->nack(false, false); // или $msg->reject();
+                }
+            }
+        );
+
+        try {
+            while ($channel->is_consuming()) {
+                $channel->wait();
+            }
+        } catch (\Throwable $e) {
+            Yii::error("Consume loop error: " . $e->getMessage());
+            throw $e;
+        }
+
+}
+
+
+//для отладки
+
+    public function declareSimpleQueue(string $queueName): void
+    {
+
+
+        $this->getChannel('setup')->queue_declare(
+            $queueName,
+            false,
+            true, // durable
+            false,  // exclusive (удалится после отключения consumer'а)
+            true ,
+            false,
+        );
+    }
+
+
+    private function handleRetryOrDlq(AMQPMessage $msg, string $queueName, int $retryCount, int $maxRetries): void
+    {
+        if ($retryCount >= $maxRetries) {
+            // ➤ Отправляем в DLQ
+            $dlqName = $queueName . '.dlq';
+
+            // Объявляем DLQ (если ещё не существует)
+            $dlqChannel = $this->getChannel('dlq');
+            $dlqChannel->queue_declare($dlqName, false, true, false, false);
+
+            // Публикуем сообщение "как есть"
+            $dlqChannel->basic_publish($msg, '', $dlqName);
+
+            // Подтверждаем исходное сообщение — оно больше не вернётся
+            $msg->ack();
+
+            Yii::warning("Message moved to DLQ after $maxRetries retries: $dlqName", 'rabbitmq');
+        } else {
+            // ➤ Отправляем в retry-очередь через DLX (автоматически через nack)
+            // Но сначала обновим заголовок счётчика
+            $headers = [];
+            if ($msg->has('application_headers')) {
+                $headers = $msg->get('application_headers')->getNativeData();
+            }
+            $headers['x-retry-count'] = $retryCount + 1;
+
+            // Создаём новое сообщение с обновлённым заголовком
+            $newMsg = new AMQPMessage(
+                $msg->getBody(),
+                [
+                    'delivery_mode' => AMQPMessage::DELIVERY_MODE_PERSISTENT,
+                    'application_headers' => new \PhpAmqpLib\Wire\AMQPTable($headers)
+                ]
+            );
+
+            // Публикуем напрямую в retry-очередь
+            $retryQueue = $queueName . '.retry';
+            $retryChannel = $this->getChannel('retry');
+            $retryChannel->basic_publish($newMsg, '', $retryQueue);
+
+            // Подтверждаем исходное сообщение
+            $msg->ack();
+
+            Yii::info("Message sent to retry queue ($retryQueue), attempt " . ($retryCount + 1), 'rabbitmq');
+        }
+    }
 }

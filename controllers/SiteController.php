@@ -145,6 +145,9 @@ class SiteController extends Controller
     }
 
 
+    public function actionPing() {
+       json_encode(['status' => 'ok', 'ts' => time()]);
+    }
 
 
 

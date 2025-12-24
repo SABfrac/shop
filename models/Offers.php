@@ -8,11 +8,12 @@ use Yii;
  * This is the model class for table "offers".
  *
  * @property int $id ID предложения
- * @property int $product_id ID товара (модели)
+ * @property string $vendor_sku код предложения комбинации товара
+ * @property int $sku_id ID товара (модели)
  * @property int $vendor_id ID продавца (из таблицы vendor)
  * @property float $price Цена
  * @property int $stock Количество на складе
- * @property string|null $sku Артикул продавца (SKU)
+ * @property int|null $warranty
  * @property string $condition Состояние (new, used, refurbished)
  * @property bool $status Активно ли предложение (прошло модерацию)
  * @property int $sort_order Порядок сортировки
@@ -23,6 +24,9 @@ class Offers extends \yii\db\ActiveRecord
 {
 
 
+    const STATUS_INACTIVE = 0;
+    const STATUS_ACTIVE = 1;
+    const STATUS_MODERATION = 2;
     /**
      * {@inheritdoc}
      */
@@ -37,17 +41,17 @@ class Offers extends \yii\db\ActiveRecord
     public function rules()
     {
         return [
-            [['sku'], 'default', 'value' => null],
             [['sort_order'], 'default', 'value' => 0],
             [['condition'], 'default', 'value' => 'new'],
-            [['product_id', 'vendor_id', 'price'], 'required'],
-            [['product_id', 'vendor_id', 'stock', 'sort_order'], 'default', 'value' => null],
-            [['product_id', 'vendor_id', 'stock', 'sort_order'], 'integer'],
+            [['sku_id', 'vendor_id', 'price'], 'required'],
+            [['sku_id', 'vendor_id', 'stock', 'warranty', 'sort_order'], 'default', 'value' => null],
+            [['sku_id', 'vendor_id', 'stock', 'warranty', 'sort_order','status'], 'integer'],
             [['price'], 'number'],
-            [['status'], 'boolean'],
             [['created_at', 'updated_at'], 'safe'],
-            [['sku'], 'string', 'max' => 255],
             [['condition'], 'string', 'max' => 50],
+            [['vendor_sku'],'unique'],
+            [['vendor_sku'],'string'],
+            [['vendor_id', 'sku_id',], 'unique', 'targetAttribute' => ['vendor_id', 'sku_id']],
         ];
     }
 
@@ -58,11 +62,12 @@ class Offers extends \yii\db\ActiveRecord
     {
         return [
             'id' => 'ID',
-            'product_id' => 'Product ID',
+            'sku_id' => 'Sku ID',
             'vendor_id' => 'Vendor ID',
+            'vendor_sku'=>'Vendor Sku',
             'price' => 'Price',
             'stock' => 'Stock',
-            'sku' => 'Sku',
+            'warranty' => 'Warranty',
             'condition' => 'Condition',
             'status' => 'Status',
             'sort_order' => 'Sort Order',
@@ -70,16 +75,22 @@ class Offers extends \yii\db\ActiveRecord
             'updated_at' => 'Updated At',
         ];
     }
-
-    public function getProduct()
-    {
-        return $this->hasOne(Products::class, ['id' => 'product_id']);
-    }
-
+//    public function getProductSkus()
+//    {
+//        return $this->hasOne(ProductSkus::class, ['id' => 'sku_id']);
+//    }
 
     public function getVendor()
     {
         return $this->hasOne(Vendors::class, ['id' => 'vendor_id']);
     }
+
+
+    public function getSku()
+    {
+        return $this->hasOne(ProductSkus::class, ['id' => 'sku_id']);
+    }
+
+
 
 }

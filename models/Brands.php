@@ -18,6 +18,11 @@ use Yii;
 class Brands extends \yii\db\ActiveRecord
 {
 
+    const STATUS_ACTIVE = 1;
+    const STATUS_DRAFT = 0;
+    const STATUS_ARCHIVE = -1;
+
+
 
     /**
      * {@inheritdoc}
@@ -61,9 +66,33 @@ class Brands extends \yii\db\ActiveRecord
         ];
     }
 
+
+    public static function getStatuses(): array
+    {
+        return [
+            self::STATUS_ACTIVE => 'Active',
+            self::STATUS_DRAFT => 'Draft',
+            self::STATUS_ARCHIVE => 'Archive'
+        ];
+    }
+
+
     public function getProducts()
     {
-        return $this->hasMany(Products::class, ['brand_id' => 'id']);
+        return $this->hasMany(GlobalProducts::class, ['brand_id' => 'id']);
     }
+
+    public function getCategories()
+    {
+        return $this->hasMany(Categories::class, ['id' => 'category_id'])
+            ->viaTable('brand_category', ['brand_id' => 'id']);
+    }
+
+    public function getBrandCategories()
+    {
+        return $this->hasMany(BrandCategory::class, ['brand_id' => 'id']);
+    }
+
+
 
 }

@@ -6,14 +6,15 @@ namespace app\components;
 use OpenSearch\Client;
 use yii\base\Component;
 use OpenSearch\ClientBuilder;
+use OpenSearch\Endpoints\Cluster\GetSettings;
 use Yii;
-use app\traits\ProductDataPreparer;
+
 
 
 class OpenSearch extends Component
 {
 
-    use ProductDataPreparer;
+
     public $hosts;
     public $index;
 
@@ -28,8 +29,10 @@ class OpenSearch extends Component
     public function init()
     {
         parent::init();
-        $this->_client= ClientBuilder::create()
-            ->setHosts($this->hosts)
+        $hosts = is_array($this->hosts) ? $this->hosts : [$this->hosts];
+
+        $this->_client = ClientBuilder::create()
+            ->setHosts($hosts)
             ->build();
 
 
@@ -47,68 +50,113 @@ class OpenSearch extends Component
         $params = [
             'index' => $this->index,
             'body' => [
-                'mappings' => [
-                    'dynamic'=> 'strict', // Запрещаем автоматическое создание полей
-                    'dynamic_templates' => [
-                        [
-                            'strings_as_keywords' => [
-                                'match_mapping_type' => 'string',
-                                'mapping' => [
-                                    'type' => 'keyword'  // Все новые строковые поля → keyword
+                'settings' => [
+                    'index' => [
+                        'number_of_shards' => 3,        // настройте под ваш кластер
+                        'number_of_replicas' => 1,
+                        'refresh_interval' => '30s',    // снижает нагрузку при bulk-загрузке
+                        'analysis' => [
+                            'analyzer' => [
+                                'multilingual' => [
+                                    'type' => 'custom',
+                                    'tokenizer' => 'standard',
+                                    'filter' => ['lowercase','russian_stemmer', 'english_stemmer']
                                 ]
+                            ],
+                            'filter' => [
+                                'russian_stemmer' => [
+                                    'type' => 'stemmer',
+                                    'language' => 'russian'
+                                ],
+                                'english_stemmer' => [
+                                    'type' => 'stemmer',
+                                    'language' => 'english'
+                                ],
+
                             ]
                         ]
-                    ],
+                    ]
+                ],
+                'mappings' => [
+                    'dynamic' => 'strict', // 🔒 запрещаем случайные поля
 
                     'properties' => [
-                        'id' => ['type' => 'integer'],
-                        'name' => [
+                        // === Основные ID ===
+                                    // offer ID
+                        'product_id' => ['type' => 'integer'],
+                        'sku_id' => ['type' => 'keyword'],
+                        'vendor_id' => ['type' => 'integer'],
+
+                        // === Текст поиска ===
+                        'product_name' => [
                             'type' => 'text',
+                            'analyzer' => 'multilingual',
                             'copy_to' => 'full_search',
                             'fields' => [
-                                'keyword' => ['type' => 'keyword'],
-                                'suggest' => ['type' => 'completion']
+                                'keyword' => ['type' => 'keyword', 'ignore_above' => 256],
+
                             ]
                         ],
-                        'description' => [
+                        'suggest' => [
+                            'type' => 'completion',
+
+                        ],
+
+                        // === Бренд ===
+                        'brand_id' => ['type' => 'integer'],
+                        'brand_name' => [
                             'type' => 'text',
-                            'copy_to' => 'full_search'
-                        ],
-                        'price' => ['type' => 'float'],
-                        'category' => [
-                            'properties' => [
-                                'id' => ['type' => 'integer'],
-                                'name' => ['type' => 'keyword']
+                            'analyzer' => 'multilingual',
+                            'copy_to' => 'full_search',
+                            'fields' => [
+                                'keyword' => ['type' => 'keyword', 'ignore_above' => 256]
                             ]
                         ],
-                        'brand' => [
-                            'properties' => [
-                                'id' => ['type' => 'integer'],
-                                'name' => [
-                                    'type' => 'text', // Для полнотекстового поиска по названию бренда
-                                    'fields' => [
-                                        'keyword' => ['type' => 'keyword'] // Для точной фильтрации
-                                    ]
-                                ]
-                            ]
-                        ],
+
+                        // === Категория ===
+                        'category_id' => ['type' => 'integer'],
+
+                        // === Ценовые и складские данные (для сортировки и фильтрации) ===
+                        'price' => ['type' => 'scaled_float', 'scaling_factor' => 100],
+                        'stock' => ['type' => 'integer'],
+                        'condition' => ['type' => 'keyword'], // 'new', 'used', 'refurbished'
+                        'warranty' => ['type' => 'integer'],  // месяцы
+
+                        // === Статус и метаданные ===
+                        'status' => ['type' => 'keyword'],
+                        'is_active' => ['type' => 'boolean'],
+                        'vendor_sku' => ['type' => 'keyword'],
+                        'sort_order' => ['type' => 'integer'],
+
+                        // === Варианты (EAV атрибуты) — используем nested для точности ===
                         'attributes' => [
                             'type' => 'nested',
                             'properties' => [
-                                'id' => ['type' => 'integer'],
+                                'attribute_id' => ['type' => 'integer'],
                                 'name' => ['type' => 'keyword'],
-                                'value' => ['type' => 'keyword']
+                                'value' => ['type' => 'keyword'],
+                                // Опционально: если есть типы (string/float), можно добавить value_string, value_float и т.д.
                             ]
                         ],
+
+                        // === Плоские атрибуты (опционально, для обратной совместимости) ===
                         'flat_attributes' => [
                             'properties' => [
-                                'color' => ['type' => 'keyword'],
-                                'size' => ['type' => 'keyword'],
+                                'Цвет' => ['type' => 'keyword'],
+                                'Размер' => ['type' => 'keyword'],
                                 'weight' => ['type' => 'float']
                             ]
                         ],
+
+                        // === Единое поле для полнотекстового поиска ===
                         'full_search' => [
-                            'type' => 'text'],
+                            'type' => 'text',
+                            'analyzer' => 'multilingual'
+                        ],
+
+                        // === Временные метки ===
+                        'created_at' => ['type' => 'date'],
+                        'updated_at' => ['type' => 'date'],
                     ]
                 ]
             ]
@@ -117,17 +165,6 @@ class OpenSearch extends Component
         return $this->_client->indices()->create($params);
     }
 
-    // Индексация продукта
-    public function indexProduct($product)
-    {
-        $params = [
-            'index' => $this->index,
-            'id' => $product->id,
-            'body' => $this->prepareProductData($product)
-        ];
-
-        return $this->_client->index($params);
-    }
 
     // Поиск
     public function search($query)
@@ -150,12 +187,12 @@ class OpenSearch extends Component
     {
         try {
             $params = [
-                'index' => $this->index,
                 'body' => $documents,
                 'refresh' => false // Не обновлять индекс после каждой операции
             ];
 
             $response = $this->_client->bulk($params);
+            Yii::info("Bulk indexed: " . count($documents)/2 . " docs, took: " . ($response['took'] ?? 'n/a') . "ms", 'opensearch');
 
             if ($response['errors']) {
                 $this->logBulkErrors($response);
@@ -164,7 +201,7 @@ class OpenSearch extends Component
 
             return $response;
         } catch (\Exception $e) {
-            Yii::error("Bulk error: " . $e->getMessage());
+            Yii::error("Bulk error: " . $e->getMessage(), 'opensearch');
             throw $e;
         }
     }
@@ -180,26 +217,23 @@ class OpenSearch extends Component
         if (empty($response['items'])) {
             return;
         }
-
+        $errors = [];
         foreach ($response['items'] as $item) {
-            // Проверяем наличие ошибок в каждой операции
-            $operation = reset($item); // index/delete/update
-            if (!empty($operation['error'])) {
+            $action = array_key_first($item);
+            $data = $item[$action];
+
+            if (isset($data['error'])) {
                 $errors[] = [
-                    'type' => key($item),
-                    'id' => $operation['_id'],
-                    'error_type' => $operation['error']['type'] ?? null,
-                    'status' => $operation['status']
+                    'id' => $data['_id'] ?? 'unknown',
+                    'error_type' => $data['error']['type'] ?? 'unknown',
+                    'reason' => $data['error']['reason'] ?? 'unknown',
+
                 ];
             }
         }
-        if (!empty($errors)) {
-            Yii::error([
-                'message' => 'Bulk errors occurred',
-                'errors_sample' => array_slice($errors, 0, 5),
-                'errors_count' => count($errors)
-            ], 'opensearch_bulk_errors');
-        }
+
+        // Логируем первые 5 ошибок, чтобы не засорять лог
+        Yii::error("OpenSearch Bulk Errors (sample): " . json_encode(array_slice($errors, 0, 5), JSON_UNESCAPED_UNICODE), 'opensearch');
     }
 
 
@@ -221,6 +255,40 @@ class OpenSearch extends Component
         }
 
     }
+
+    /**
+     * Проверяет существование индекса
+     */
+    public function indexExists(): bool
+    {
+        return $this->_client->indices()->exists(['index' => $this->index]);
+    }
+
+    /**
+     * Получает количество документов в индексе
+     */
+    public function getDocumentCount(): int
+    {
+        if (!$this->indexExists()) {
+            return 0;
+        }
+
+        $result = $this->_client->count(['index' => $this->index]);
+        return $result['count'] ?? 0;
+    }
+
+    /**
+     * Получает статистику индекса
+     */
+    public function getIndexStats(): ?array
+    {
+        if (!$this->indexExists()) {
+            return null;
+        }
+
+        return $this->_client->indices()->stats(['index' => $this->index]);
+    }
+
 
 
 

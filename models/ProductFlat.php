@@ -76,10 +76,10 @@ class ProductFlat extends \yii\db\ActiveRecord
 
 
 
-    public function getProduct()
-    {
-        return $this->hasOne(Products::class, ['id' => 'product_id']);
-    }
+//    public function getProduct()
+//    {
+//        return $this->hasOne(GlobalProducts::class, ['id' => 'product_id']);
+//    }
 
     public function getCategory()
     {

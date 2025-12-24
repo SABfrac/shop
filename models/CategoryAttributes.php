@@ -9,6 +9,7 @@ use Yii;
  *
  * @property int $category_id
  * @property int $attribute_id
+ * @property bool $is_variant
  * @property int|null $sort_order
  *
  * @property Attributes $attribute0
@@ -50,6 +51,7 @@ class CategoryAttributes extends \yii\db\ActiveRecord
         return [
             'category_id' => 'Category ID',
             'attribute_id' => 'Attribute ID',
+            'is_variant'=>'Is Variant',
             'sort_order' => 'Sort Order',
         ];
     }

@@ -44,71 +44,105 @@ use app\components\SearchSynchronizer;
  */
 class SyncConsumerController extends Controller
 {
+
     public function actionIndex()
     {
         echo "Запуск синхронного потребителя для поиска...\n";
-        $limit = 1000;
         $batchSize = 300;
         $maxRetries = 3;
         $processedItems = [];
         $bulkActions = [];
+        $pendingAcks = []; // копим сообщения для ack после успешного batch
         $batchStartTime = microtime(true);
         $batchTimeout = 5; // секунды
 
         $callback = function (AMQPMessage $msg) use (
             &$processedItems,
             &$bulkActions,
+            &$pendingAcks,
             &$batchStartTime,
             $batchSize,
-            $batchTimeout
+            $batchTimeout,
+            $maxRetries
         ){
-            $data = json_decode($msg->getBody(), true);
-            $headers = $msg->has('application_headers') ?
-                $msg->get('application_headers')->getNativeData() : [];
+            $data = json_decode($msg->getBody(), true) ?? [];
+            $headers = $msg->has('application_headers')
+                ? $msg->get('application_headers')->getNativeData()
+                : [];
 
             // Проверяем количество попыток
             $attempt = $headers['x-attempt'] ?? 1;
-            if ($attempt > 3) {
-                Yii::error("Message failed after 3 attempts: " . json_encode($data));
-                $msg->ack(); // Удаляем сообщение после 3 попыток
+            if ($attempt > $maxRetries) {
+                Yii::error("Message failed after {$maxRetries} attempts: " . json_encode($data));
+                $msg->ack(); // удаляем окончательно
                 return true;
             }
 
             try {
                 // Bulk-операции
-                if ($data['operation'] === 'index') {
+                if (($data['operation'] ?? null) === 'index') {
                     $bulkActions[] = ['index' => ['_id' => $data['entity_id']]];
                     $bulkActions[] = $data['data'];
-                } elseif ($data['operation'] === 'delete') {
+                } elseif (($data['operation'] ?? null) === 'delete') {
                     $bulkActions[] = ['delete' => ['_id' => $data['entity_id']]];
+                } else {
+                    throw new \RuntimeException('Unknown operation');
                 }
 
+                // Кладём текущее сообщение в очередь на подтверждение после успешного sendBatch
+                $pendingAcks[] = $msg;
                 $processedItems[] = $data;
 
-                $currentTime = microtime(true);
-                $elapsedTime = $currentTime - $batchStartTime;
+                $elapsedTime = microtime(true) - $batchStartTime;
+                $needFlush = (count($bulkActions) >= $batchSize) || ($elapsedTime >= $batchTimeout);
 
-                // Проверка условий отправки батча
-                if (count($bulkActions) >= $batchSize || $elapsedTime >= $batchTimeout) {
+                if ($needFlush) {
                     // Отправка батча
                     if (!$this->sendBatch($bulkActions)) {
                         throw new \RuntimeException("Batch failed");
                     }
 
-                }
-                $bulkActions = [];
-                $batchStartTime = microtime(true); // сброс таймера
+                    // ACK всех сообщений, вошедших в батч
+                    foreach ($pendingAcks as $m) {
+                        $m->ack();
+                    }
+                    $pendingAcks = [];
 
-                // Логирование обработанных элементов
-                if (count($processedItems) >= $batchSize) {
-                    $this->logProcessedItems($processedItems);
-                    $processedItems = [];
+                    // Логирование обработанных элементов (после успешного flush)
+                    if (!empty($processedItems)) {
+                        $this->logProcessedItems($processedItems);
+                        $processedItems = [];
+                    }
+
+                    // Сброс батча и таймера только после удачного flush
+                    $bulkActions = [];
+                    $batchStartTime = microtime(true);
                 }
-                $msg->ack();
+
                 return true;
             } catch (\Throwable $e) {
                 Yii::error("Ошибка обработки: " . $e->getMessage(), 'consumer');
-                $msg->nack(true); // отправим обратно
+
+                // Гарантируем, что текущее сообщение тоже вернём, если его ещё нет в pendingAcks
+                $found = false;
+                foreach ($pendingAcks as $m) {
+                    if ($m === $msg) { $found = true; break; }
+                }
+                if (!$found) {
+                    $pendingAcks[] = $msg;
+                }
+
+                // NACK всех сообщений текущего «висящего» батча (с requeue)
+                foreach ($pendingAcks as $m) {
+                    $m->nack(true);
+                }
+                $pendingAcks = [];
+
+                // Сбрасываем несостоявшийся батч
+                $bulkActions = [];
+                $processedItems = [];
+                $batchStartTime = microtime(true);
+
                 return false;
             }
         };
@@ -116,18 +150,29 @@ class SyncConsumerController extends Controller
         Yii::$app->rabbitmq->consumeWithRetry(
             SearchSynchronizer::SYNC_QUEUE,
             $callback,
-            50 // лимит сообщений которые может взять потребитель из очереди до подтверждения
+            50 // prefetch
         );
 
-        // Отправка оставшихся данных
+        // Финальный flush при остановке потребителя
         if (!empty($bulkActions)) {
-            $this->sendBatch($bulkActions);
-        }
+            if ($this->sendBatch($bulkActions)) {
+                foreach ($pendingAcks as $m) {
+                    $m->ack();
+                }
+                $pendingAcks = [];
+                $bulkActions = [];
 
-        if (!empty($processedItems)) {
-            $this->logProcessedItems($processedItems);
+                if (!empty($processedItems)) {
+                    $this->logProcessedItems($processedItems);
+                    $processedItems = [];
+                }
+            } else {
+                foreach ($pendingAcks as $m) {
+                    $m->nack(true);
+                }
+                $pendingAcks = [];
+            }
         }
-
     }
 
 

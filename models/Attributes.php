@@ -10,6 +10,7 @@ use Yii;
  * @property int $id
  * @property string $name
  * @property string $type
+ * @property string $code
  * @property bool|null $is_filterable
  * @property bool|null $is_required
  */
@@ -34,7 +35,7 @@ class Attributes extends \yii\db\ActiveRecord
 
             [['name', 'type'], 'required'],
             [['is_filterable', 'is_required'], 'boolean'],
-            [['name', 'type'], 'string', 'max' => 255],
+            [['name', 'type','code'], 'string', 'max' => 255],
         ];
     }
 
@@ -47,6 +48,7 @@ class Attributes extends \yii\db\ActiveRecord
             'id' => 'ID',
             'name' => 'Name',
             'type' => 'Type',
+            'code' => 'Code',
             'is_filterable' => 'Is Filterable',
             'is_required' => 'Is Required',
         ];
@@ -61,7 +63,7 @@ class Attributes extends \yii\db\ActiveRecord
     // Связь с продуктами через значения
     public function getProducts()
     {
-        return $this->hasMany(Products::class, ['id' => 'product_id'])
+        return $this->hasMany(GlobalProducts::class, ['id' => 'global_product_id'])
             ->via('product_attribute_values');//через все значения атрибута мы получаем доступ ко всем продуктам, которые используют этот атрибут (Атрибут "Цвет" может принадлежать многим продуктам (например, "Красный" цвет может быть у телефона, футболки, автомобиля)
     }
 
@@ -69,7 +71,7 @@ class Attributes extends \yii\db\ActiveRecord
     // Связь с вариантами значений
     public function getAttributeOptions()
     {
-        return $this->hasMany(AttributeOptions::class, ['attribute_id' => 'id'])
+        return $this->hasMany(CategoryAttributeOption::class, ['attribute_id' => 'id'])
             ->orderBy('sort_order');
     }
 
