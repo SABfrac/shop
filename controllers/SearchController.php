@@ -112,7 +112,7 @@ class SearchController extends \yii\web\Controller
         // Если нужны только карточки — берем минимум.
         $fieldsToReturn = [
             'id', 'product_id', 'product_name', 'brand_name', 'category_id',
-            'sku_id', 'vendor_sku','price', 'stock'  // Добавьте сюда картинку, если есть
+            'sku_id', 'vendor_sku','price', 'stock' ,'image_thumb_key'
         ];
 
 
@@ -207,6 +207,17 @@ class SearchController extends \yii\web\Controller
                         if (isset($live['price'])) $item['price'] = $live['price'];
                         if (isset($live['stock'])) $item['stock'] = $live['stock'];
                     }
+                    if (!empty($item['image_thumb_key'])) {
+                        $item['preview_url'] = Yii::$app->imageManager->getPublicUrl(
+                            $item['image_thumb_key'],
+                            120,   // ширина
+                            120,   // высота
+                            'fit'  // операция
+                        );
+
+                    }
+                    unset($item['image_thumb_key']);
+
                 }
                 unset($item);
             } catch (\Exception $e) {

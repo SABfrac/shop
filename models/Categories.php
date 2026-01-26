@@ -4,7 +4,7 @@ namespace app\models;
 
 use Yii;
 
-use app\traits\SaveOrFailTrait;
+
 
 /**
  * This is the model class for table "categories".
@@ -27,7 +27,7 @@ use app\traits\SaveOrFailTrait;
 class Categories extends \yii\db\ActiveRecord
 {
 
-use SaveOrFailTrait;
+
     /**
      * {@inheritdoc}
      */

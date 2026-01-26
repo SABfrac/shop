@@ -1,3 +1,4 @@
+import { fileURLToPath, URL } from 'node:url'
 import { defineConfig } from 'vite'
 import vue from '@vitejs/plugin-vue'
 import fs from 'fs'
@@ -29,6 +30,11 @@ export default defineConfig({
                 target: 'https://nginx:443',
                 changeOrigin: true,
                 secure: false, // т.к. сертификат self-signed в контейнере nginx
+            },
+            '/images': {
+                target: 'https://nginx:443', // Куда слать запрос реально
+                changeOrigin: true,
+                secure: false, // Игнорировать проблемы с SSL
             },
         },
 

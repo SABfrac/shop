@@ -1,8 +1,8 @@
 <?php
 namespace app\jobs;
-
 use app\services\offer\OfferBulkImportService;
-use app\services\offer\test;
+
+
 use Yii;
 use app\commands\RabbitMqController;
 use yii\db\Exception;
@@ -40,7 +40,7 @@ class ProcessFeedChunkJob
 //
 //            $service = new OfferBulkImportService();
 //            $result = $service->importChunk($vendorId, $rows, $categoryId, $reportId);
-            $result = Yii::$container->get(test::class)->importChunk($vendorId, $rows, $categoryId, $reportId);
+            $result = Yii::$container->get(OfferBulkImportService::class)->importChunk($vendorId, $rows, $categoryId, $reportId);
 
             $duration = $result['metrics']['total']['duration'] ?? 0;
 

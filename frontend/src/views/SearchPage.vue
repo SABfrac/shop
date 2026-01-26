@@ -37,6 +37,16 @@
           :key="item.id"
           class="result-item"
       >
+        <!-- Превью изображения -->
+        <div class="product-image">
+          <img
+              v-if="item.preview_url"
+              :src="item.preview_url"
+              :alt="item.product_name"
+              @error="onImageError($event)"
+          />
+          <div v-else class="no-image">Нет фото</div>
+        </div>
         <h3>{{ item.product_name }}</h3>
         <p>Бренд: {{ item.brand_name }}</p>
         <p>Цена: {{ item.price }} ₽</p>
@@ -76,6 +86,15 @@ const selectSuggestion = async (suggestion: string) => {
   searchNow(); // запускаем поиск
   await nextTick();
   isSelecting.value = false;
+};
+
+
+
+// Обработка ошибок загрузки изображения (опционально)
+const onImageError = (e: Event) => {
+  const img = e.target as HTMLImageElement;
+  img.style.opacity = '0.5';
+  // или можно показать placeholder
 };
 
 // Дополнительно: при вводе очищаем подсказки, если query уменьшился до <2 или стало пустым

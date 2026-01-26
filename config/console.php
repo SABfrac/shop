@@ -51,7 +51,7 @@ $config = [
             'vhost' => '/',
         ],
 
-        's3' => [
+        's3Reports' => [
             'class' => 'app\components\filesystem\S3Service',
             'key' => 'minioadmin',
             'secret' => 'minioadmin',
@@ -59,6 +59,21 @@ $config = [
             'endpoint' => 'http://minio:9000',
             'region' => 'us-east-1', // MinIO игнорирует регион, но SDK требует его
             'version' => 'latest',
+        ],
+
+        'imageManager' => [
+            'class' => 'app\components\image\product\ImageManager',
+        ],
+
+        's3Images' => [
+            'class' => 'app\components\filesystem\S3Service',
+            'key' => 'minioadmin',
+            'secret' => 'minioadmin',
+            'bucket' => 'marketplace-images',
+            'endpoint' => 'http://minio:9000', // ← имя сервиса в Docker!
+            'region' => 'us-east-1',
+            'version' => 'latest',
+
         ],
         'log' => [
             'targets' => [

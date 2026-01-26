@@ -19,6 +19,7 @@ class S3Service extends Component
     public string $endpoint = ''; // Нужно для MinIO или Яндекс.Облака
     public string $version = 'latest';
 
+
     private ?S3Client $client = null;
 
     public function init()
@@ -37,6 +38,7 @@ class S3Service extends Component
                     'key'    => $this->key,
                     'secret' => $this->secret,
                 ],
+
                 'region'  => $this->region,
                 'version' => $this->version,
             ];
@@ -78,12 +80,47 @@ class S3Service extends Component
     /**
      * Генерация временной ссылки (если файлы приватные)
      */
-    public function getPresignedUrl(string $filename, string $duration = '+1 hour', ?string $bucket = null): string
-    {
-        $cmd = $this->getClient()->getCommand('GetObject', [
-            'Bucket' => $bucket,
-            'Key'    => $filename
-        ]);
+    public function getPresignedUrl(
+
+        string $filename,
+    string $duration = '+1 hour',
+    ?string $bucket = null,
+    string $method = 'GET',
+    ?string $publicEndpoint = null // ← новый параметр
+): string {
+        // Используем переданный bucket или дефолтный
+        $bucket = $bucket ?? $this->bucket;
+
+        // Если указан publicEndpoint — создаём временный клиент
+        if ($publicEndpoint !== null) {
+            $tempClient = new S3Client([
+                'version' => $this->version,
+                'region'  => $this->region,
+                'endpoint' => $publicEndpoint, // например: 'http://localhost:9000'
+                'use_path_style_endpoint' => true,
+                'credentials' => [
+                    'key'    => $this->key,
+                    'secret' => $this->secret,
+                ],
+            ]);
+
+            $client = $tempClient;
+        } else {
+            $client = $this->getClient();
+        }
+
+        if ($method === 'PUT') {
+            $cmd = $client->getCommand('PutObject', [
+                'Bucket' => $bucket,
+                'Key'    => $filename,
+            ]);
+        } else {
+            $cmd = $client->getCommand('GetObject', [
+                'Bucket' => $bucket,
+                'Key'    => $filename,
+            ]);
+        }
+
         $request = $this->getClient()->createPresignedRequest($cmd, $duration);
         return (string)$request->getUri();
     }

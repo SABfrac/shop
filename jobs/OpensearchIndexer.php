@@ -7,6 +7,7 @@ namespace app\jobs;
 use app\models\Offers;
 use app\helper\DateTimeHelper;
 use app\services\catalog\DataNormalizerService;
+use app\models\ProductImage;
 
 
 use Yii;
@@ -163,6 +164,31 @@ class OpensearchIndexer
             $searchTerms[] = trim($brand['name'] ?? '');
         }
 
+        $imageThumbKey = null;
+        if (!empty($offer['sku_id'])) {
+            // Ищем главное изображение для SKU (или global_product, если offer без SKU)
+            $mainImage = ProductImage::find()
+                ->where([
+                    'entity_type' => 'offer',
+                    'entity_id' => $offer['id'],
+                    'is_main' => true,
+                ])
+                ->orWhere([
+                    'entity_type' => 'global_product',
+                    'entity_id' => $product['id'],
+                    'is_main' => true,
+                ])
+                ->orderBy(['is_main' => SORT_DESC]) // offer > global_product
+                ->asArray()
+                ->one();
+
+            if ($mainImage) {
+                $imageThumbKey =  $mainImage ? $mainImage['storage_path']:null; // например: "vendors/1/offers/123/img_xxx.jpg"
+            }
+        }
+
+
+
         // === Формируем документ ===
         $doc = [
             // === Основные ID ===
@@ -198,9 +224,13 @@ class OpensearchIndexer
             // === Атрибуты ===
             'attributes' => $attributes,
             'flat_attributes' => $flatAttributes,
+            // ключ к оригиналу в MinIO
+            'image_thumb_key'=>$imageThumbKey,
 
             // === Поле для поиска ===
             'full_search' => implode(' ', array_filter($searchTerms)),
+
+
 
             // === Временные метки ===
             'created_at' => !empty($offer['created_at'])

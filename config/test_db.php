@@ -1,6 +1,6 @@
 <?php
 $db = require __DIR__ . '/db.php';
-// test database! Important not to run tests on production or development databases
-$db['dsn'] = 'mysql:host=localhost;dbname=yii2basic_test';
+// offerBulkImportService2 database! Important not to run tests on production or development databases
+$db['dsn'] = 'pgsql:host=yii2_pgs;dbname=shop_test';
 
 return $db;

@@ -85,6 +85,9 @@ class VendorFeedController extends Controller
 
         $successStats =$this->getCompletedChunkStats($id);
 
+
+
+
         // Вычисляем общее время (если есть started_at и finished_at)
         $totalElapsed = null;
         if ($report->started_at && $report->finished_at) {
@@ -97,7 +100,13 @@ class VendorFeedController extends Controller
             'successCount' => (int)($successStats['success_count'] ?? 0),
             'errors' => $report->errors_json ? json_decode($report->errors_json, true) : null,
             'errorFileUrl' => $report->file_path
-                ? Yii::$app->s3->getPresignedUrl($report->file_path, '+1 hour','feed-reports')
+                ? Yii::$app->s3Reports->getPresignedUrl(
+                    $report->file_path,
+                    '+1 hour',
+                     'feed-reports',
+                    'GET',
+                    'http://localhost:9000',
+                    )
                 : null,
             'totalRows'=>(int)($report->total_rows ?? 0),
             'isFinished' => ($report->finished_at !== null),

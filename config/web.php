@@ -43,6 +43,10 @@ $config = [
 
         ],
 
+        'imageManager' => [
+            'class' => 'app\components\image\product\ImageManager',
+        ],
+
 
 
         'opensearch' => [
@@ -101,14 +105,25 @@ $config = [
             'useFileTransport' => true,
         ],
 
-        's3' => [
+        's3Reports' => [
             'class' => 'app\components\filesystem\S3Service',
             'key' => 'minioadmin',
             'secret' => 'minioadmin',
             'bucket' => 'feed-reports', // создайте его вручную в UI или через код
-            'endpoint' => 'http://localhost:9000',
+            'endpoint' => 'http://minio:9000',
             'region' => 'us-east-1', // MinIO игнорирует регион, но SDK требует его
             'version' => 'latest',
+        ],
+
+        's3Images' => [
+            'class' => 'app\components\filesystem\S3Service',
+            'key' => 'minioadmin',
+            'secret' => 'minioadmin',
+            'bucket' => 'marketplace-images',
+            'endpoint' => 'http://minio:9000', // ← имя сервиса в Docker!
+            'region' => 'us-east-1',
+            'version' => 'latest',
+
         ],
 
         'log' => [
@@ -172,6 +187,10 @@ $config = [
                 'GET api/search' => 'search/search',
                 'GET api/search/products' => 'search/search-products',
                 'GET api/search/suggest' => 'search/suggest',
+                'POST api/vendor-product/request-image-upload' => 'vendor-product/request-image-upload',
+                'POST api/vendor-product/confirm-images' => 'vendor-product/confirm-images',
+                'POST api/vendor-product/set-main-image' => 'vendor-product/set-main-image',
+                'GET api/vendor-product/get-images' => 'vendor-product/get-images',
 
                 
 

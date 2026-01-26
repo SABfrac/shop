@@ -281,8 +281,48 @@
           </button>
         </div>
 
+
+
         <div v-else-if="loading" class="loading">Загрузка...</div>
         <div v-else class="no-product">Выберите категорию и введите информацию о товаре</div>
+        <div class="image-upload-section" :class="{ disabled: !isOfferSaved }">
+          <h3>Изображения товара</h3>
+          <p v-if="!isOfferSaved" class="hint">Сначала сохраните предложение.</p>
+
+          <div v-else>
+            <div class="image-grid">
+              <!-- Существующие изображения -->
+              <div v-for="img in uploadedImages" :key="img.id" class="image-item">
+                <img :src="img.preview_url" :alt="img.filename || ''" />
+                <label>
+                  <input
+                      type="radio"
+                      name="main-image"
+                      :checked="img.is_main"
+                      @change="setMainImage(img.id)"
+                  /> Главное
+                </label>
+              </div>
+
+              <!-- Кнопка загрузки (если <5 изображений) -->
+              <div v-if="uploadedImages.length < 5" class="upload-placeholder">
+                <input
+                    ref="fileInput"
+                    type="file"
+                    accept="image/*"
+                    multiple
+                    @change="handleFileSelect"
+                    style="display: none"
+                />
+                <button type="button" @click="$refs.fileInput?.click()" class="btn-secondary">
+                  + Добавить фото
+                </button>
+              </div>
+            </div>
+          </div>
+        </div>
+
+
       </form>
     </div>
   </div>
@@ -300,6 +340,29 @@ import { useCatalogSelection } from '../composables/useCatalogSelection'
 import { useVendorStore } from '../stores/vendor'
 import {AttributeDef} from "../services/api/categoryAttributes";
 import { useSearch } from '../composables/useSearch'
+import { useProductImages } from '../composables/useProductImages'
+
+
+interface ImageRecord {
+  id: number
+  storage_path: string
+  filename: string | null
+  is_main: boolean
+  sort_order: number
+  preview_url: string
+}
+// image
+const isOfferSaved = ref(false)
+const savedEntityType = ref<'global_product' | 'offer' | null>(null)
+const savedEntityId = ref<number | null>(null)
+const fileInput = ref<HTMLInputElement | null>(null)
+const {
+  images: uploadedImages,
+  loadImages,
+  requestUploadUrls,
+  confirmImages,
+  setMainImage,
+} = useProductImages()
 
 // === Router & Store ===
 const router = useRouter()
@@ -758,7 +821,20 @@ const saveOffers = async () => {
     })
 
     if (response.data.success) {
-      router.push('/vendor/dashboard')
+      const { global_product_id, offer_id } = response.data.data
+
+      // Определяем тип сущности
+      if (isEditingSingle.value && offer_id) {
+        savedEntityType.value = 'offer'
+        savedEntityId.value = offer_id
+      } else {
+        savedEntityType.value = 'global_product'
+        savedEntityId.value = global_product_id
+      }
+
+      isOfferSaved.value = true
+      await loadImages(savedEntityType.value!, savedEntityId.value!)
+
     } else {
       alert('Ошибка сохранения: ' + response.data.error)
     }
@@ -768,6 +844,58 @@ const saveOffers = async () => {
   }
 }
 
+const handleFileSelect = async (e: Event) => {
+  const input = e.target as HTMLInputElement
+  const files = Array.from(input.files || [])
+
+  if (uploadedImages.value.length + files.length > 5) {
+    alert('Можно загрузить не более 5 изображений')
+    return
+  }
+  input.value = '';
+
+  const fileNames = files.map(f => f.name)
+  try {
+    const  urls  = await requestUploadUrls(
+        savedEntityType.value!,
+        savedEntityId.value!,
+        fileNames
+    )
+
+    const uploadPromises = files.map(async (file) => {
+      const meta = urls[file.name]
+      if (!meta) {
+        throw new Error(`Пресигнатура не найдена для файла: ${file.name}`)
+      }
+
+
+      const { upload_url, storage_path } = meta
+      const response = await fetch(upload_url, {
+        method: 'PUT',
+        body: file,
+        headers: { 'Content-Type': file.type || 'application/octet-stream' }
+      })
+
+      if (!response.ok) {
+        throw new Error(`MinIO error: ${response.status} ${response.statusText}`)
+      }
+      return { storage_path, filename: file.name }
+    })
+
+    const uploadResults = await Promise.all(uploadPromises)
+
+    await confirmImages(
+        savedEntityType.value!,
+        savedEntityId.value!,
+        uploadResults
+    )
+
+    await loadImages(savedEntityType.value!, savedEntityId.value!)
+  } catch (err) {
+    console.error('Ошибка загрузки:', err)
+    alert('Не удалось загрузить изображения: ' + (err instanceof Error ? err.message : 'неизвестная ошибка'))
+  }
+}
 
 
 onMounted(async () => {
@@ -796,6 +924,69 @@ onMounted(async () => {
   background-color: #e7f3ff;
   padding: 0.5rem;
   margin-top: 0.5rem;
+}
+
+.image-upload-section {
+  margin-top: 2rem;
+  padding: 1.5rem;
+  border: 1px solid #e0e0e0;
+  border-radius: 8px;
+  background-color: #fafafa;
+}
+
+.image-upload-section.disabled {
+  opacity: 0.6;
+  pointer-events: none;
+}
+
+.image-upload-section h3 {
+  margin-top: 0;
+  margin-bottom: 1rem;
+}
+
+.image-upload-section .hint {
+  color: #666;
+  font-style: italic;
+}
+
+.image-grid {
+  display: grid;
+  grid-template-columns: repeat(auto-fill, minmax(120px, 1fr));
+  gap: 16px;
+  margin-top: 12px;
+}
+
+.image-item,
+.upload-placeholder {
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  justify-content: center;
+  height: 140px;
+  border: 1px dashed #ccc;
+  border-radius: 6px;
+  background: white;
+  position: relative;
+}
+
+.image-item img {
+  max-width: 100%;
+  max-height: 100px;
+  object-fit: contain;
+  margin-bottom: 6px;
+}
+
+.image-item label {
+  font-size: 0.85rem;
+  cursor: pointer;
+  display: flex;
+  align-items: center;
+  gap: 4px;
+}
+
+.upload-placeholder button {
+  padding: 6px 12px;
+  font-size: 0.9rem;
 }
 
 

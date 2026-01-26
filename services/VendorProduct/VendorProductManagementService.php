@@ -127,15 +127,15 @@ class VendorProductManagementService extends Component
 
             $transaction->commit();
 
-            if ($offerId) {
-                Yii::$app->rabbitmq->publishWithRetries(
-                    RabbitMqController::QUEUE_INDEX,
-                    [
-                        ['offer_ids' => [$offerId]]
-                    ]
-
-                );
-            }
+//            if ($offerId) {
+//                Yii::$app->rabbitmq->publishWithRetries(
+//                    RabbitMqController::QUEUE_INDEX,
+//                    [
+//                        ['offer_ids' => [$offerId]]
+//                    ]
+//
+//                );
+//            }
 
             return [
                 'global_product_id' => $globalProductId,

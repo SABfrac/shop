@@ -20,8 +20,8 @@ class ContactCest
         $I->amGoingTo('submit contact form with correct data');
         $I->fillField('#contactform-name', 'tester');
         $I->fillField('#contactform-email', 'tester@example.com');
-        $I->fillField('#contactform-subject', 'test subject');
-        $I->fillField('#contactform-body', 'test content');
+        $I->fillField('#contactform-subject', 'offerBulkImportService2 subject');
+        $I->fillField('#contactform-body', 'offerBulkImportService2 content');
         $I->fillField('#contactform-verifycode', 'testme');
 
         $I->click('contact-button');

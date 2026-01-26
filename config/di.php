@@ -4,6 +4,7 @@ namespace app\config;
 use yii\di\Instance;
 use app\services\catalog\AttributeService;
 use app\services\catalog\BrandService;
+use app\services\catalog\CategoryRepository;
 use app\services\catalog\DataNormalizerService;
 use app\services\catalog\GlobalProductService;
 use app\services\catalog\OfferService;
@@ -22,6 +23,7 @@ return [
             AttributeService::class => AttributeService::class,
             DataNormalizerService::class => DataNormalizerService::class,
             ProductSkuVariantHashBuilder::class => ProductSkuVariantHashBuilder::class,
+            CategoryRepository::class => CategoryRepository::class,
             OpensearchIndexer::class => [
                 '__class' => OpensearchIndexer::class,
                 '__construct()' => [

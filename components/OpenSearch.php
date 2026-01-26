@@ -147,6 +147,8 @@ class OpenSearch extends Component
                                 'weight' => ['type' => 'float']
                             ]
                         ],
+                        // === путь к оригиналу в MinIO (для картинок)
+                        'image_thumb_key' => ['type' => 'keyword'],
 
                         // === Единое поле для полнотекстового поиска ===
                         'full_search' => [
@@ -237,9 +239,6 @@ class OpenSearch extends Component
     }
 
 
-
-
-
     public function deleteIndex()
     {
         try {
@@ -255,6 +254,7 @@ class OpenSearch extends Component
         }
 
     }
+
 
     /**
      * Проверяет существование индекса

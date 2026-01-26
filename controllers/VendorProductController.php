@@ -1,6 +1,7 @@
 <?php
 
 namespace app\controllers;
+use app\models\ProductImage;
 use app\services\VendorProduct\VendorProductManagementService;
 use app\models\ProductForm;
 use app\models\ProductSkus;
@@ -10,6 +11,9 @@ use app\traits\VendorAuthTrait;
 use Yii;
 use app\models\Offers;
 use app\models\CategoryAttributeOption;
+use yii\web\BadRequestHttpException;
+use app\commands\RabbitMqController;
+
 
 
 class VendorProductController extends Controller
@@ -72,7 +76,7 @@ class VendorProductController extends Controller
                 'vendor_id' => $vendorId,
                 'global_product_id' => $globalProductId,
             ], 'api-error');
-            return  $this->asJson(['success' => false, 'error' => $e->getMessage()]);
+            return $this->asJson(['success' => false, 'error' => $e->getMessage()]);
         }
     }
 
@@ -174,4 +178,227 @@ class VendorProductController extends Controller
         ];
     }
 
+
+    public function actionRequestImageUpload()
+    {
+        $this->requirePostRequest();
+        $vendorId = $this->getAuthorizedVendorId();
+
+        $entityType = Yii::$app->request->post('entity_type');
+        $entityId = (int)Yii::$app->request->post('entity_id');
+        $filenames = (array)Yii::$app->request->post('filenames');
+
+        if (!in_array($entityType, ['global_product', 'offer'])) {
+            throw new BadRequestHttpException('Неверный entity_type');
+        }
+        if (count($filenames) > 5) {
+            throw new BadRequestHttpException('Максимум 5 изображений за раз');
+        }
+
+        // 🔒 Проверка прав
+        if ($entityType === 'offer') {
+            $exists = Offers::find()->where(['id' => $entityId, 'vendor_id' => $vendorId])->exists();
+        } else {
+            $exists = Offers::find()
+                ->alias('o')
+                ->innerJoin(['s' => 'product_skus'], 's.id = o.sku_id')
+                ->andWhere(['o.vendor_id' => $vendorId, 's.global_product_id' => $entityId])
+                ->exists();
+        }
+        if (!$exists) {
+            throw new ForbiddenHttpException('Нет доступа к этой сущности');
+        }
+
+        // Проверка общего лимита
+        $existingCount = ProductImage::find()
+            ->where(['entity_type' => $entityType, 'entity_id' => $entityId])
+            ->count();
+        if ($existingCount + count($filenames) > 5) {
+            throw new BadRequestHttpException('Общее количество изображений не может превышать 5');
+        }
+
+        $allowedExts = ['jpg', 'jpeg', 'png', 'webp'];
+        $urls = [];
+
+        foreach ($filenames as $name) {
+            $ext = strtolower(pathinfo($name, PATHINFO_EXTENSION));
+            if (!in_array($ext, $allowedExts)) {
+                throw new BadRequestHttpException("Недопустимый формат: $name");
+            }
+
+            $safeName = preg_replace('/[^a-z0-9._-]/i', '_', basename($name));
+            $path = "vendors/{$vendorId}/{$entityType}s/{$entityId}/" . uniqid('img_', true) . '_' . $safeName;
+            $uploadUrl = Yii::$app->s3Images->getPresignedUrl($path, '+1 hour', null, 'PUT','http://127.0.0.1:9000'); // важно: PUT
+
+            $urls[$name] = [
+                'upload_url' => $uploadUrl,
+                'storage_path' => $path,
+            ];
+        }
+
+        return $this->asJson(['urls' => $urls]);
+    }
+
+
+    public function actionConfirmImages()
+    {
+        $this->requirePostRequest();
+        $vendorId = $this->getAuthorizedVendorId();
+
+        $entityType = Yii::$app->request->post('entity_type');
+        $entityId = (int)Yii::$app->request->post('entity_id');
+        $images = (array)Yii::$app->request->post('images');
+
+        // 🔁 Повторная проверка прав (обязательно!)
+        if ($entityType === 'offer') {
+            $exists = Offers::find()->where(['id' => $entityId, 'vendor_id' => $vendorId])->exists();
+        } else {
+            $exists = Offers::find()
+                ->alias('o')
+                ->innerJoin(['s' => 'product_skus'], 's.id = o.sku_id')
+                ->andWhere(['o.vendor_id' => $vendorId, 's.global_product_id' => $entityId])
+                ->exists();
+        }
+        if (!$exists) {
+            throw new ForbiddenHttpException('Нет доступа');
+        }
+
+        // Проверка лимита
+        $existingCount = ProductImage::find()
+            ->where(['entity_type' => $entityType, 'entity_id' => $entityId])
+            ->count();
+        if ($existingCount + count($images) > 5) {
+            throw new BadRequestHttpException('Превышен лимит в 5 изображений');
+        }
+
+        foreach ($images as $img) {
+            $image = new ProductImage();
+            $image->entity_type = $entityType;
+            $image->entity_id = $entityId;
+            $image->storage_path = $img['storage_path'];
+            $image->filename = $img['filename'] ?? null;
+            $image->is_main = true; // по умолчанию
+            $image->sort_order = 0;
+            if (!$image->save()) {
+                throw new Exception('Ошибка сохранения изображения: ' . json_encode($image->errors));
+            }
+        }
+
+        $offerId = null;
+
+        if ($entityType === 'offer') {
+            // Прямая привязка
+            $offerId = $entityId;
+        } else {
+            // global_product → ищем offer ЭТОГО vendor'а для этого товара
+            $offer = Offers::find()
+                ->where(['vendor_id' => $vendorId])
+                ->andWhere(['in', 'sku_id',
+                    ProductSkus::find()->select('id')->where(['global_product_id' => $entityId])
+                ])
+                ->orderBy(['id' => SORT_DESC]) // последний созданный
+                ->limit(1)
+                ->one();
+            $offerId = $offer ? $offer->id : null;
+        }
+
+        if ($offerId) {
+            Yii::$app->rabbitmq->publishWithRetries(
+                RabbitMqController::QUEUE_INDEX,
+                [['offer_ids' => [$offerId]]]
+            );
+        }
+
+        return $this->asJson(['success' => true]);
+
+
+    }
+
+    public function actionSetMainImage()
+    {
+        $this->requirePostRequest();
+        $vendorId = $this->getAuthorizedVendorId();
+        $imageId = (int)Yii::$app->request->post('image_id');
+
+        $image = ProductImage::findOne($imageId);
+        if (!$image) {
+            throw new NotFoundHttpException();
+        }
+
+        // Проверка принадлежности
+        if ($image->entity_type === 'offer') {
+            $allowed = Offers::find()->where(['id' => $image->entity_id, 'vendor_id' => $vendorId])->exists();
+        } else {
+            $allowed = Offers::find()
+                ->alias('o')
+                ->innerJoin(['s' => 'product_skus'], 's.id = o.sku_id')
+                ->andWhere(['o.vendor_id' => $vendorId, 's.global_product_id' => $image->entity_id])
+                ->exists();
+        }
+        if (!$allowed) {
+            throw new ForbiddenHttpException();
+        }
+
+        ProductImage::updateAll(['is_main' => false], [
+            'entity_type' => $image->entity_type,
+            'entity_id' => $image->entity_id,
+        ]);
+
+        $image->is_main = true;
+        $image->save(false);
+
+        return $this->asJson(['success' => true]);
+    }
+
+    public function actionGetImages()
+    {
+        $vendorId = $this->getAuthorizedVendorId();
+        $entityType = Yii::$app->request->get('entity_type');
+        $entityId = (int)Yii::$app->request->get('entity_id');
+
+        if (!in_array($entityType, ['global_product', 'offer'])) {
+            throw new BadRequestHttpException('Неверный entity_type');
+        }
+
+        // Проверка прав
+        if ($entityType === 'offer') {
+            $exists = Offers::find()->where(['id' => $entityId, 'vendor_id' => $vendorId])->exists();
+        } else {
+            $exists = Offers::find()
+                ->alias('o')
+                ->innerJoin(['s' => 'product_skus'], 's.id = o.sku_id')
+                ->andWhere(['o.vendor_id' => $vendorId, 's.global_product_id' => $entityId])
+                ->exists();
+        }
+        if (!$exists) {
+            throw new ForbiddenHttpException('Нет доступа');
+        }
+
+        $imageRecords = ProductImage::find()
+            ->where(['entity_type' => $entityType, 'entity_id' => $entityId])
+            ->orderBy(['sort_order' => SORT_ASC, 'id' => SORT_ASC])
+            ->asArray()
+            ->all();
+
+        $images = [];
+        foreach ($imageRecords as $img) {
+            $images[] = [
+                'id' => $img['id'],
+                'storage_path' => $img['storage_path'],
+                'filename' => $img['filename'],
+                'is_main' => (bool)$img['is_main'],
+                'sort_order' => $img['sort_order'],
+                'preview_url' => Yii::$app->imageManager->getUrl($img['storage_path'], 120, 120, 'fit')
+            ];
+        }
+
+        return $this->asJson(['images' => $images]);
+    }
+
+    protected function requirePostRequest()
+    {
+        if (Yii::$app->request->isPost === false) {
+            throw new \yii\web\BadRequestHttpException('Только POST-запросы разрешены.');
+        }
+    }
 }

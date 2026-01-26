@@ -3,7 +3,7 @@ $params = require __DIR__ . '/params.php';
 $db = require __DIR__ . '/test_db.php';
 
 /**
- * Application configuration shared by all test types
+ * Application configuration shared by all offerBulkImportService2 types
  */
 return [
     'id' => 'basic-tests',
@@ -32,7 +32,7 @@ return [
             'identityClass' => 'app\models\User',
         ],
         'request' => [
-            'cookieValidationKey' => 'test',
+            'cookieValidationKey' => 'offerBulkImportService2',
             'enableCsrfValidation' => false,
             // but if you absolutely need it set cookie domain to localhost
             /*

@@ -61,8 +61,8 @@ class FinalizeFeedReportJob
                     $err['msg'] ?? ''
                 ], ';');
 
-                // Оставим немного для превью в JSON (первые 50 штук)
-                if ($count < 2) {
+                // Оставим немного для превью в JSON (первые 30 штук)
+                if ($count < 30) {
                     $previewErrors[] = $err;
                 }
                 $count++;
@@ -79,10 +79,13 @@ class FinalizeFeedReportJob
 
             try {
                 // Используем наш сервис
-          Yii::$app->s3->upload($fileName, $csvContent,'text/csv', 'feed-reports');
+          Yii::$app->s3Reports->upload($fileName, $csvContent,'text/csv', 'feed-reports');
+
 
 
             } catch (\Exception $e) {
+
+//                throw new \Exception("S3 UPLOAD CRASHED: " . $e->getMessage(), 0, $e);
                 Yii::error("Failed to upload error report: " . $e->getMessage());
                 // Не роняем джобу, просто не будет ссылки
             }
@@ -125,7 +128,7 @@ class FinalizeFeedReportJob
         $report->status = VendorFeedReports::STATUS_COMPLETED;
 
         $report->total_chunks = (int)($stats['total_chunks'] ?? 0);
-        $report->errors_json = empty($rawErrors)
+        $report->errors_json = $rawErrors
             ? json_encode([
                 'total_errors' => count($rawErrors),
                 'preview'      => array_values($previewErrors),
@@ -159,6 +162,6 @@ class FinalizeFeedReportJob
         ]);
 
 
-        Yii::info("Report $reportId finalized. Import: {$importTime}s, Index: {$indexTime }s", __METHOD__);
+
     }
 }
