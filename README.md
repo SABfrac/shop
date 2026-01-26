@@ -77,24 +77,6 @@ docker exec -it yii2_php php yii migrate/up --interactive=0
 docker-compose exec php vendor/bin/codecept run unit services/OfferBulkImportServiceTest
 
 
-### 📊 Архитектура системы
-```mermaid
-flowchart LR
-    A[Frontend<br/>Vue 3] --> B[Backend<br/>Yii2 API]
-    B --> C[RabbitMQ<br/>Queues]
-    C --> D[Workers<br/>PHP CLI]
-    D --> E[(PostgreSQL)]
-    D --> F[(OpenSearch)]
-    
-    classDef frontend fill:#4CAF50,stroke:#388E3C,color:white
-    classDef backend fill:#2196F3,stroke:#0D47A1,color:white
-    classDef queue fill:#FF9800,stroke:#E65100,color:white
-    classDef worker fill:#9C27B0,stroke:#4A148C,color:white
-    classDef storage fill:#607D8B,stroke:#263238,color:white
-    
-    class A frontend
-    class B backend
-    class C queue
-    class D worker
-    class E,F storage
+
 ```
+
