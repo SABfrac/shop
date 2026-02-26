@@ -11,6 +11,9 @@ use app\services\catalog\OfferService;
 use app\services\catalog\SkuService;
 use app\services\ProductSkuVariantHashBuilder;
 use app\jobs\OpensearchIndexer;
+use app\jobs\listeners\IndexingListener;
+use app\jobs\listeners\MetricsListener;
+use app\jobs\listeners\FinalizationListener;
 use app\queue\handlers\IndexMessageHandler;
 
 return [
@@ -30,8 +33,13 @@ return [
                     Instance::of(DataNormalizerService::class),
                 ],
             ],
-            IndexMessageHandler::class => IndexMessageHandler::class,
+
+//            MetricsListener::class => MetricsListener::class,
+//            FinalizationListener::class => FinalizationListener::class,
+//            IndexingListener::class => FinalizationListener::class
         ],
 
     ],
 ];
+
+

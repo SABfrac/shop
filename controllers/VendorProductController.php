@@ -13,6 +13,7 @@ use app\models\Offers;
 use app\models\CategoryAttributeOption;
 use yii\web\BadRequestHttpException;
 use app\commands\RabbitMqController;
+use app\components\RabbitMQ\AmqpTopology as AMQP;
 
 
 
@@ -304,8 +305,9 @@ class VendorProductController extends Controller
 
         if ($offerId) {
             Yii::$app->rabbitmq->publishWithRetries(
-                RabbitMqController::QUEUE_INDEX,
-                [['offer_ids' => [$offerId]]]
+                '',
+                [['offer_ids' => [$offerId]]],
+                AMQP::QUEUE_INDEX,
             );
         }
 

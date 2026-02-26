@@ -2,7 +2,7 @@
 
 namespace app\services\VendorProduct;
 
-use app\commands\RabbitMqController;
+
 use app\helper\DataNormalizer;
 use app\models\{Attributes, Brands, Categories, CategoryAttributeOption, GlobalProducts, Offers, ProductSkus};
 use app\services\ProductSkuVariantHashBuilder;
@@ -10,6 +10,7 @@ use Yii;
 use yii\base\Component;
 use yii\db\{Exception, Transaction};
 use app\controllers\OffersController;
+use app\components\RabbitMQ\AmqpTopology as AMQP;
 
 
 
@@ -129,7 +130,7 @@ class VendorProductManagementService extends Component
 
 //            if ($offerId) {
 //                Yii::$app->rabbitmq->publishWithRetries(
-//                    RabbitMqController::QUEUE_INDEX,
+//                    AMQP::QUEUE_INDEX,
 //                    [
 //                        ['offer_ids' => [$offerId]]
 //                    ]

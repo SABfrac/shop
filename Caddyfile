@@ -1,0 +1,30 @@
+:80 {
+    root * /app/public/web
+    php_server
+
+    # Прокси на Imaginary
+    handle /images/* {
+        uri strip_prefix /images
+        reverse_proxy http://imaginary:9000
+    }
+}
+
+:443 {
+    tls /app/ssl/localhost.pem /app/ssl/localhost-key.pem
+
+    root * /app/public/web
+    php_server
+
+    # Прокси на Imaginary
+    handle /images/* {
+        uri strip_prefix /images
+        reverse_proxy http://imaginary:9000
+    }
+
+    # Логирование для отладки
+    log {
+        output file /app/public/runtime/logs/caddy.log
+        format console
+        level INFO
+    }
+}

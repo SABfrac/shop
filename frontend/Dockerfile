@@ -12,6 +12,6 @@ RUN npm install
 # Копируем остальной код (хотя он будет заменен через volume в docker-compose)
 COPY . .
 # Открываем порт для dev-сервера
-EXPOSE 8080
+EXPOSE 5173
 
 CMD ["npm", "run", "dev"]

@@ -11,20 +11,23 @@ use app\services\catalog\OfferService;
 use app\services\catalog\SkuService;
 use app\services\catalog\CategoryRepository;
 use app\services\ProductSkuVariantHashBuilder;
+use app\components\events\ChunkCompletedEvent;
 use Yii;
 use yii\base\Component;
 use yii\db\Transaction;
 use app\controllers\OffersController;
+use yii\base\Event;
+
+use app\components\events\OffersUpsertedEvent;
 /**
  * Обновленный сервис для импорта фидов.
  * Теперь делегирует основную логику другим сервисам.
  */
 class OfferBulkImportService extends Component
 {
-    // ========== КОНФИГУРАЦИЯ ==========
-    private const BATCH_SIZE_GP = 500;
-    private const BATCH_SIZE_SKU = 500;
-    private const BATCH_SIZE_OFFERS = 500;
+
+    public const EVENT_CHUNK_COMPLETED = 'chunkCompleted';
+    public const EVENT_OFFERS_UPSERTED = 'offersUpserted';
 
     // ========== СЕРВИСЫ ==========
     private BrandService $brandService;
@@ -65,6 +68,11 @@ class OfferBulkImportService extends Component
 
     public function importChunk(int $vendorId, array $rows, int $categoryId, ?int $reportId = null): array
     {
+        $lockId = crc32("feed_import_{$vendorId}_{$reportId}");
+        Yii::$app->db->createCommand("SELECT pg_advisory_lock(:id)", [':id' => $lockId])->execute();
+
+        $transaction = Yii::$app->db->beginTransaction();
+
         if (empty($rows)) {
             return [
                 'success' => 0,
@@ -122,6 +130,8 @@ class OfferBulkImportService extends Component
                     $brands,
                     $vendorId
                 );
+
+                $transaction->commit();
                 $this->endMetric('match_and_create');
 
 
@@ -137,6 +147,10 @@ class OfferBulkImportService extends Component
             } catch (\Throwable $e) {
 
                 throw $e;
+            }
+            finally {
+
+                Yii::$app->db->createCommand("SELECT pg_advisory_unlock(:id)", [':id' => $lockId])->execute();
             }
         } catch (\Throwable $e) {
             $this->endMetric('total');

@@ -1,13 +1,12 @@
 <?php
 
-namespace app\components;
+namespace app\components\RabbitMQ;
 
-
-use yii\base\Component;
 
 use PhpAmqpLib\Connection\AMQPStreamConnection;
 use PhpAmqpLib\Message\AMQPMessage;
 use Yii;
+use yii\base\Component;
 
 class RabbitMQ extends Component
 {
@@ -174,14 +173,15 @@ class RabbitMQ extends Component
      * → Ждем ответа от RabbitMQ: "Сообщение получено" (или ошибку).
      *
      */
-    public function publishMessageWithRetry($queueName, $messages, $headers = [], $priority = 0)
+    public function publishMessageWithRetry($exchangeName, $messages,$routingKey = '', $headers = [], $priority = 0)
     {
         $channel = $this->getChannel('publish');
+
         $channel->confirm_select();//режим подтверждений для канала снижает производительность ,но гарантирует, что сообщения не потеряются при сбоях
         // Подготавливаем все сообщения заранее
         $preparedMessages = array_map(function($message) use ($headers, $priority) {
             return new AMQPMessage(
-                json_encode($message),
+                is_string($message) ? $message : json_encode($message),
                 [
                     'delivery_mode' => AMQPMessage::DELIVERY_MODE_PERSISTENT,
                     'priority' => $priority,
@@ -192,7 +192,7 @@ class RabbitMQ extends Component
 
         // Публикуем пачкой
         foreach ($preparedMessages as $msg) {
-            $channel->batch_basic_publish($msg, '', $queueName);
+            $channel->batch_basic_publish($msg, $exchangeName, $routingKey);
         }
 
         $channel->publish_batch();
@@ -213,7 +213,7 @@ class RabbitMQ extends Component
     /**
      * метод повторной переотправки если оборвется связь с каналом
      */
-    public function publishWithRetries($queueName, $messages, $headers = [], $priority = 0)
+    public function publishWithRetries($exchangeName, $messages, $routingKey='', $headers = [], $priority = 0)
     {
         if (empty($messages)) {
             \Yii::warning("publishWithRetries called with empty message array.", __METHOD__);
@@ -225,7 +225,7 @@ class RabbitMQ extends Component
 
         while ($attempt < $maxRetries) {
             try {
-                $this->publishMessageWithRetry($queueName, $messages, $headers, $priority);
+                $this->publishMessageWithRetry($exchangeName, $messages, $routingKey, $headers, $priority);
                 return;
             } catch (\Throwable $e) {
                 $attempt++;
@@ -242,7 +242,10 @@ class RabbitMQ extends Component
 
 
 
-    public function consumeWithRetry($queueName, callable $callback, $prefetchCount = 30, $maxRetries = 3)
+
+
+
+    public function consumeWithRetry($queueName, callable $callback, $prefetchCount = 20, $maxRetries = 3)
     {
         $channel = $this->getChannel('consume');
 
@@ -350,6 +353,76 @@ class RabbitMQ extends Component
         }
 
 }
+
+
+    /**
+     * Простой консьюмер БЕЗ механизма retry
+     * Используется для слушателей событий
+     *
+     * @param string $queueName Имя очереди
+     * @param callable $callback function(AMQPMessage $msg): bool — true = ACK, false = NACK (без повтора!)
+     * @param int $prefetchCount Количество сообщений на воркер
+     */
+    public function consumeSimple(string $queueName, callable $callback, int $prefetchCount = 10): void
+    {
+        $channel = $this->getChannel('consume');
+
+        // Для слушателей — умеренный prefetch (они быстрые)
+        $channel->basic_qos(null, $prefetchCount, null);
+
+        $channel->basic_consume(
+            $queueName,
+            '', // consumer tag
+            false, // no_local
+            false, // no_ack = false (ручное подтверждение)
+            false, // exclusive
+            false, // no_wait
+            function (AMQPMessage $msg) use ($callback, $channel, $queueName) {
+                try {
+                    $shouldAck = $callback($msg);
+
+                    if ($shouldAck) {
+                        $msg->ack();
+                    } else {
+                        // Для слушателей: NACK без повтора → сообщение уходит в чёрную дыру
+                        // Это осознанное решение: события не должны ретраиться бесконечно
+                        $msg->nack(false, false);
+                        \Yii::error("Сообщение отклонено слушателем $queueName без повтора", __METHOD__);
+                    }
+                } catch (\Throwable $e) {
+                    // КРИТИЧЕСКАЯ СИТУАЦИЯ: слушатель упал
+                    // События должны быть идемпотентными и надёжными — падение = баг в коде
+                    Yii::error("КРИТИЧЕСКАЯ ОШИБКА в слушателе $queueName: " . $e->getMessage(), __METHOD__);
+                    Yii::error("Стек: " . $e->getTraceAsString(), __METHOD__);
+
+                    // NACK без повтора — не засоряем очередь битыми событиями
+                    $msg->nack(false, false);
+
+
+
+                    // Не прерываем цикл — продолжаем слушать другие сообщения
+                }
+            }
+        );
+
+        // Бесконечный цикл обработки
+        while (count($channel->callbacks)) {
+            try {
+                $channel->wait(null, true, 30); // 30 сек таймаут для проверки соединения
+            } catch (\PhpAmqpLib\Exception\AMQPTimeoutException $e) {
+                // Таймаут — нормально, продолжаем работу
+                continue;
+            } catch (\PhpAmqpLib\Exception\AMQPConnectionClosedException $e) {
+                \Yii::warning("Соединение RabbitMQ закрыто, переподключаемся...", __METHOD__);
+                $this->reconnect();
+
+            } catch (\Throwable $e) {
+                \Yii::error("Неожиданная ошибка в консьюмере: " . $e->getMessage(), __METHOD__);
+                sleep(1); // пауза перед повтором
+            }
+        }
+    }
+
 
 
 //для отладки

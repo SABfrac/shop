@@ -10,8 +10,8 @@ class OpenSearchController extends Controller
 {
     /**
      * Создает индекс с маппингом
-     * проверка запущен ли opensearch : docker exec -it shoplocal-php-1 curl http://opensearch:9200
-     * Использование: docker exec -it shoplocal-php-1 php yii open-search/create-index
+     * проверка запущен ли opensearch : docker-compose exec app  curl http://opensearch:9200
+     * Использование: docker exec app php yii open-search/create-index
      */
     public function actionCreateIndex()
     {
@@ -41,7 +41,7 @@ class OpenSearchController extends Controller
 
     /**
      * Удаляет индекс
-     * Использование: docker exec -it shoplocal-php-1 php yii open-search/delete-index
+     * Использование: docker-compose exec app php yii open-search/delete-index
      */
     public function actionDeleteIndex()
     {
@@ -54,7 +54,7 @@ class OpenSearchController extends Controller
 
     /**
      * Показывает статистику индекса
-     * Использование: docker exec -it shoplocal-php-1 php yii open-search/status
+     * Использование: docker-compose exec app php yii open-search/status
      */
     public function actionStatus()
     {
@@ -79,7 +79,7 @@ class OpenSearchController extends Controller
 
     /**
      * Полная переиндексация всех офферов
-     * Использование: docker exec -it shoplocal-php-1 php yii open-search/reindex-all
+     * Использование: docker-compose exec app php yii open-search/reindex-all
      */
     public function actionReindexAll($batchSize = 500)
     {
@@ -126,7 +126,7 @@ class OpenSearchController extends Controller
      *
      * @param int $hours Количество часов назад (по умолчанию 3)
      * @return int
-     * Использование: docker exec -it shoplocal-php-1 php yii open-search/inactive-offers
+     * Использование: docker-compose exec app php yii open-search/inactive-offers
      */
     public function actionInactiveOffers(int $minutes = 1): int
     {

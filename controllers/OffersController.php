@@ -6,6 +6,7 @@ use yii\web\Controller;
 use app\models\Offers;
 use app\models\ProductSkus;
 use app\commands\RabbitMqController;
+use app\components\RabbitMQ\AmqpTopology as AMQP;
 use Yii;
 use yii\helpers\ArrayHelper;
 
@@ -199,11 +200,12 @@ class OffersController  extends Controller
 
             if ($offer->id) {
                 Yii::$app->rabbitmq->publishWithRetries(
-                    RabbitMqController::QUEUE_INDEX,
+                   '',
                     [
                         ['offer_ids' => [$offer->id]]
 
-                    ]
+                    ],
+                    RAMQP::QUEUE_INDEX,
 
                 );
             }
@@ -256,8 +258,11 @@ class OffersController  extends Controller
 
             // Отправляем в очередь индексации — bulkIndexOffers поймёт, что оффера нет в БД → удалит из индекса
             Yii::$app->rabbitmq->publishWithRetries(
-                RabbitMqController::QUEUE_INDEX,
-                [['offer_ids' => [$offer->id]]]
+                '',
+                [
+                    ['offer_ids' => [$offer->id]]
+                ],
+                AMQP::QUEUE_INDEX,
             );
 
             \Yii::$app->response->setStatusCode(204); // No Content — стандарт для успешного DELETE

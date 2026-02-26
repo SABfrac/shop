@@ -11,7 +11,7 @@ use app\models\Categories;
 use Yii;
 use yii\web\Response;
 use yii\web\NotFoundHttpException;
-use app\commands\RabbitMqController;
+use app\components\RabbitMQ\AmqpTopology as AMQP;
 
 
 class VendorFeedController extends Controller
@@ -56,7 +56,7 @@ class VendorFeedController extends Controller
         }
 
         Yii::$app->rabbitmq->publishWithRetries(
-            RabbitMqController::QUEUE_PARSE,
+            '',
             [
                 [
                     'tempFilePath' => $tempPath,
@@ -65,7 +65,9 @@ class VendorFeedController extends Controller
                     'reportId' => $report->id,
                     'fileExtension' => $file->extension,
                 ]
-            ]
+
+            ],
+            AMQP::QUEUE_PARSE,
         );
 
         return $this->asJson(['reportId' => $report->id,
@@ -82,8 +84,49 @@ class VendorFeedController extends Controller
         if (!$report) {
             throw new NotFoundHttpException('Report not found');
         }
+        $isFinished = in_array($report->status, ['completed', 'completed_with_errors', 'failed']);
 
-        $successStats =$this->getCompletedChunkStats($id);
+        if (!$isFinished) {
+
+        $meta = Yii::$app->redis->executeCommand('HGETALL', ["feed:meta:{$id}"]);
+        // Преобразуем плоский массив Redis [key, val, key, val] в ассоциативный
+        $metaData = [];
+        for ($i = 0; $i < count($meta); $i += 2) {
+            $metaData[$meta[$i]] = $meta[$i + 1];
+        }
+
+        $totalChunks = (int)($metaData['total_chunks'] ?? 0);
+        $completedChunks = (int)($metaData['completed_chunks'] ?? 0);
+
+
+
+        $progressPercent = 0;
+        if ($totalChunks > 0) {
+            $progressPercent = round(($completedChunks / $totalChunks) * 100, 1);
+        }
+
+        $etaSeconds = null;
+        if ($report->started_at && $completedChunks > 2) { // Ждем немного данных для точности
+            $startedAt = strtotime($report->started_at);
+            $elapsed = time() - $startedAt;
+            if ($progressPercent > 0) {
+                $estimatedTotal = $elapsed / ($progressPercent / 100);
+                $etaSeconds = max(0, $estimatedTotal - $elapsed);
+            }
+        }
+
+
+            return $this->asJson([
+                'isFinished' => false,
+                'progressPercent' => $progressPercent,
+                'etaSeconds' => $etaSeconds ? (int)$etaSeconds : null,
+            ]);
+        }
+
+        $errorCount = $report->total_failed ?? 0;
+        $totalRows = (int)$report->total_rows;
+        $successCount = max(0, $totalRows - $errorCount);
+
 
 
 
@@ -97,7 +140,7 @@ class VendorFeedController extends Controller
 
         return $this->asJson([
             'status' => $report->status,
-            'successCount' => (int)($successStats['success_count'] ?? 0),
+            'successCount' => $successCount,
             'errors' => $report->errors_json ? json_decode($report->errors_json, true) : null,
             'errorFileUrl' => $report->file_path
                 ? Yii::$app->s3Reports->getPresignedUrl(
@@ -110,8 +153,9 @@ class VendorFeedController extends Controller
                 : null,
             'totalRows'=>(int)($report->total_rows ?? 0),
             'isFinished' => ($report->finished_at !== null),
+            'progressPercent' => 100,
+            'etaSeconds' => null,
 
-            // === НОВЫЕ МЕТРИКИ ===
             'metrics' => [
                 'importTime' => (float)$report->total_duration_sec,
                 'indexTime' => (float)$report->total_indexing_sec,
@@ -162,7 +206,7 @@ class VendorFeedController extends Controller
                 'hasErrorReport' => !empty($report['file_path']),
                 'errorFileUrl' => $report['file_path'] ?? null,
                 'statusText' => $statusText,
-                'createdAt' => $report['created_at'], // Уже строка в формате БД (например, '2025-12-24 10:00:00')
+                'createdAt' => $report['created_at'],
             ];
         }
 
@@ -223,16 +267,7 @@ class VendorFeedController extends Controller
     }
 
 
-    private function getCompletedChunkStats(int $reportId): array
-    {
-        return Yii::$app->db->createCommand(
-            "SELECT 
-            COUNT(*) AS success_count,
-            COALESCE(SUM(processed_rows), 0) AS total_processed_rows
-        FROM feed_chunk_result
-        WHERE report_id = :report_id AND status = 'completed'"
-        )->bindValue(':report_id', $reportId)->queryOne();
-    }
+
 
 
 

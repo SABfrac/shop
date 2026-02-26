@@ -1,14 +1,13 @@
 <?php
 namespace app\jobs;
 
-use yii\base\BaseObject;
-
-use Yii;
+use app\commands\RabbitMqController;
+use app\components\RabbitMQ\AmqpTopology as AMQP;
 use app\models\VendorFeedReports;
 use app\services\feed\CsvFeedParser;
 use app\services\feed\JsonFeedParser;
 use RuntimeException;
-use app\commands\RabbitMqController;
+use Yii;
 use yii\db\Expression;
 
 class ParseFeedJob
@@ -58,9 +57,11 @@ class ParseFeedJob
                     'reportId' => (int)$reportId,
                     'rows' => $chunk, // ← 1000 строк
                 ];
+
                 Yii::$app->rabbitmq->publishWithRetries(
-                    RabbitMqController::QUEUE_PROCESS,
-                    [$message] // ← обёртка обязательна!
+                    '',
+                    [$message],// ← обёртка обязательна!
+                    AMQP::QUEUE_PROCESS,
                 );
             });
 
@@ -74,8 +75,9 @@ class ParseFeedJob
                 'reportId' => (int)$reportId,
                 'rows' => $chunk,
             ], $chunks);
+
             if (!empty($messages)) {
-                Yii::$app->rabbitmq->publishWithRetries(RabbitMqController::QUEUE_PROCESS, $messages);
+                Yii::$app->rabbitmq->publishWithRetries('', $messages,AMQP::QUEUE_PROCESS);
             }
         }else {
             throw new RuntimeException("Unsupported file extension: $fileExtension");
@@ -93,8 +95,9 @@ class ParseFeedJob
 
         if (!empty($messages)) {
             Yii::$app->rabbitmq->publishWithRetries(
-                RabbitMqController::QUEUE_PROCESS,
-                $messages
+                '',
+                $messages,
+                AMQP::QUEUE_PROCESS,
             );
         }
 

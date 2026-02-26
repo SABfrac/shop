@@ -4,6 +4,7 @@ $params = require __DIR__ . '/params.php';
 $db = require __DIR__ . '/db.php';
 $diConfig = require __DIR__ . '/di.php';
 
+
 $config = [
     'id' => 'basic-console',
     'basePath' => dirname(__DIR__),
@@ -43,13 +44,15 @@ $config = [
         ],
 
         'rabbitmq' => [
-            'class' => 'app\components\RabbitMQ',
+            'class' => 'app\components\RabbitMQ\RabbitMQ',
             'host' => getenv('RABBITMQ_HOST') ?: 'rabbitmq', // ← имя сервиса в docker-compose
             'port' => (int)(getenv('RABBITMQ_PORT') ?: 5672),
             'user' => getenv('RABBITMQ_USER') ?: 'guest',
             'password' => getenv('RABBITMQ_PASSWORD') ?: 'guest',
             'vhost' => '/',
         ],
+
+
 
         's3Reports' => [
             'class' => 'app\components\filesystem\S3Service',

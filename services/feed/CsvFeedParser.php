@@ -31,6 +31,7 @@ class CsvFeedParser extends Component
         $rowCount = 0;
         $chunk = [];
 
+
         while (($data = fgetcsv($handle, 0, ';')) !== false) {
             if (count($data) !== count($headers)) {
                 continue; // или логировать

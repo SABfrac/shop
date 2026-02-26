@@ -43,7 +43,6 @@
           </div>
 
           <div class="step-content">
-            <!-- Кликабельная область загрузки -->
             <div
                 class="upload-area"
                 :class="{ 'drag-over': isDragOver, 'has-file': !!selectedFile }"
@@ -91,37 +90,53 @@
               <div class="status-icon">{{ getStatusIcon(uploadStatus.type) }}</div>
               <div class="status-content">
                 <strong>{{ uploadStatus.title }}</strong>
+
+
+
+                <div v-if="uploadStatus.isFinished" class="stats-grid mt-2">
+                  <div class="stat-item success">
+                    <span class="stat-value">{{ uploadStatus.successCount }}</span>
+                    <span class="stat-label">✅ Успешно</span>
+                  </div>
+                  <div v-if="uploadStatus.errorCount > 0" class="stat-item error">
+                    <span class="stat-value">{{ uploadStatus.errorCount }}</span>
+                    <span class="stat-label">❌ Ошибки</span>
+                  </div>
+                  <div class="stat-item total">
+                    <span class="stat-value">{{ uploadStatus.totalRows }}</span>
+                    <span class="stat-label">📊 Всего</span>
+                  </div>
+                </div>
+
                 <p>{{ uploadStatus.message }}</p>
+
+                <!-- Метрики -->
+                <div v-if="uploadStatus.metrics" class="metrics-display mt-2">
+                  <span class="metric-item">⏱ Импорт: {{ uploadStatus.metrics.importTime?.toFixed(2) }}s</span>
+                  <span class="metric-item">🔍 Индексация: {{ uploadStatus.metrics.indexTime?.toFixed(2) }}s</span>
+                </div>
+
+                <!-- === ПРОГРЕСС БАР (Только в процессе) === -->
+                <div v-if="uploadStatus.progressPercent !== undefined && !uploadStatus.isFinished" class="progress-container mt-3">
+                  <div class="progress-info">
+                    <span>Обработано: {{ uploadStatus.progressPercent }}%</span>
+                    <span v-if="uploadStatus.etaSeconds" class="eta-text">
+                      Осталось: {{ formatEta(uploadStatus.etaSeconds) }}
+                    </span>
+                  </div>
+                  <div class="progress-bar-bg">
+                    <div class="progress-bar-fill" :style="{ width: uploadStatus.progressPercent + '%' }"></div>
+                  </div>
+                </div>
+                <!-- ================================ -->
 
                 <button
                     v-if="uploadStatus.errorFileUrl"
                     @click="downloadErrorReport"
                     class="btn-text-icon mt-2"
                 >
-                  📥 Скачать полный отчёт об ошибках ({{ uploadStatus.errorCount }} шт.)
+                  📥 Скачать отчёт об ошибках ({{ uploadStatus.errorCount }} шт.)
                 </button>
-
-                <!-- Прогресс бар (фейковый или реальный если есть инфо о чанках) -->
-                <div v-if="isUploading && uploadStatus.type === 'info'" class="progress-bar-container">
-                  <div class="progress-bar-indeterminate"></div>
-                </div>
-
-                <ul v-if="uploadStatus.previewErrors && uploadStatus.previewErrors.length" class="error-list mt-2">
-                  <li v-for="(err, idx) in uploadStatus.previewErrors" :key="idx">
-                    <span class="row-badge">Строка {{ err.line + 1 }}</span>
-                    <span v-if="err.sku" class="sku-badge">{{ err.sku }}</span>
-                    {{ err.msg }}
-                  </li>
-                  <li v-if="uploadStatus.errorCount > uploadStatus.previewErrors.length" class="more-errors">
-                    ... и ещё {{ uploadStatus.errorCount - uploadStatus.previewErrors.length }} ошибок в файле
-                  </li>
-                </ul>
-
-                <ul v-if="uploadStatus.errors" class="error-list">
-                  <li v-for="(err, key) in uploadStatus.errors" :key="key">
-                    <span class="row-badge">Строка {{ parseInt(key) + 1 }}</span> {{ err }}
-                  </li>
-                </ul>
               </div>
             </div>
           </div>
@@ -157,42 +172,91 @@
   </div>
 </template>
 
-<script setup>
+<script setup lang="ts">
 import { ref, onMounted, onUnmounted } from 'vue'
 import http from '@/services/api/http'
 import CategorySelector from '@/components/CategorySelector.vue'
 import { fetchCategories } from '@/services/api/categories'
 
 // === State ===
-const selectedCategoryId = ref(null)
+const selectedCategoryId = ref<number | null>(null)
 const selectedCategoryName = ref('')
 const downloadingTemplate = ref(false)
-
 const fileInput = ref(null)
 const selectedFile = ref(null)
 const isDragOver = ref(false)
 const isUploading = ref(false)
-const uploadStatus = ref(null) // { type: 'info'|'success'|'error', title: string, message: string, errors?: obj }
-
-const pollInterval = ref(null)
+const uploadStatus = ref<any>(null)
 const uploadHistory = ref([])
 const loadingHistory = ref(false)
 
-const FEED_REPORT_FINAL_STATUSES = [
-  'completed',
-  'completed_with_errors',
-  'failed'
-];
+// === Polling State (Вынесено на уровень модуля) ===
+let pollTimer: number | null = null
+let currentReportId: number | null = null
 
-const FEED_REPORT_ACTIVE_STATUSES = [
-  'queued',
-  'parsing',
-  'processing',
-  'chunks_queued'
-];
+const FEED_REPORT_FINAL_STATUSES = ['completed', 'completed_with_errors', 'failed']
+
+// === Helpers ===
+const formatEta = (seconds: number) => {
+  if (!seconds && seconds !== 0) return '...'
+  if (seconds < 60) return `${seconds} сек`
+  const mins = Math.floor(seconds / 60)
+  const secs = seconds % 60
+  return `${mins} мин ${secs} сек`
+}
+
+// === Polling Logic (Short Polling для Highload) ===
+const startStatusPolling = (reportId: number) => {
+  if (pollTimer) clearInterval(pollTimer)
+  currentReportId = reportId
+
+  const checkStatus = async () => {
+    try {
+      const { data } = await http.get(`/vendor/feed/report-status/${reportId}`)
+
+      uploadStatus.value = {
+        type: data.isFinished ? 'success' : 'info',
+        title: data.isFinished ? 'Загружено' : 'В обработке',
+        message: data.isFinished
+            ? `Обработано товаров: ${data.successCount}`
+            : `Обработано: ${data.progressPercent}%`,
+        metrics: data.metrics,
+        progressPercent: data.progressPercent,
+        etaSeconds: data.etaSeconds,
+        isFinished: data.isFinished,
+        errorFileUrl: data.errorFileUrl,
+        successCount: data.successCount,
+        errorCount: data.errorCount,
+        totalRows: data.totalRows,
+      }
+
+      if (data.isFinished) {
+        stopStatusPolling()
+        isUploading.value = false
+        selectedFile.value = null
+        loadHistory()
+      }
+    } catch (e) {
+      console.error('Polling error', e)
+    }
+  }
+
+  // Первый запрос сразу
+  checkStatus()
+  // Далее опрос каждые 2 секунды
+  pollTimer = window.setInterval(checkStatus, 2000)
+}
+
+const stopStatusPolling = () => {
+  if (pollTimer) {
+    clearInterval(pollTimer)
+    pollTimer = null
+  }
+
+}
 
 // === Category & Template ===
-const onCategorySelected = async (categoryId) => {
+const onCategorySelected = async (categoryId: number) => {
   try {
     const { data } = await http.get(`/vendor/feed/template/${categoryId}`)
     selectedCategoryName.value = data.name || `Категория ${categoryId}`
@@ -201,15 +265,13 @@ const onCategorySelected = async (categoryId) => {
   }
 }
 
-const downloadFile = (url) => {
-  if (url) window.open(url, '_blank');
-};
-
+const downloadFile = (url: string) => {
+  if (url) window.open(url, '_blank')
+}
 
 const downloadTemplate = async () => {
   if (!selectedCategoryId.value) return
   downloadingTemplate.value = true
-
   try {
     const response = await http({
       url: `/vendor/feed/template/${selectedCategoryId.value}`,
@@ -217,18 +279,15 @@ const downloadTemplate = async () => {
       params: { download: 1 },
       responseType: 'blob',
     })
-
     const url = window.URL.createObjectURL(new Blob([response.data]))
     const link = document.createElement('a')
     link.href = url
-    // Пытаемся достать имя файла из заголовков, если бэкенд отдает Content-Disposition
     const contentDisposition = response.headers['content-disposition']
     let fileName = `template_${selectedCategoryId.value}.csv`
     if (contentDisposition) {
       const match = contentDisposition.match(/filename="?([^"]+)"?/)
       if (match) fileName = match[1]
     }
-
     link.setAttribute('download', fileName)
     document.body.appendChild(link)
     link.click()
@@ -244,33 +303,29 @@ const downloadTemplate = async () => {
 
 // === File Handling ===
 const triggerFileSelect = () => fileInput.value?.click()
-
-const handleFileSelect = (e) => {
-  if (e.target.files?.length) processFile(e.target.files[0])
+const handleFileSelect = (e: Event) => {
+  const target = e.target as HTMLInputElement
+  if (target.files?.length) processFile(target.files[0])
 }
-
-const handleDrop = (e) => {
+const handleDrop = (e: DragEvent) => {
   isDragOver.value = false
-  if (e.dataTransfer.files?.length) processFile(e.dataTransfer.files[0])
+  if (e.dataTransfer?.files?.length) processFile(e.dataTransfer.files[0])
 }
-
-const processFile = (file) => {
+const processFile = (file: File) => {
   const ext = file.name.split('.').pop().toLowerCase()
   if (!['csv', 'json'].includes(ext)) {
     alert('Разрешены только файлы .csv и .json')
     return
   }
   selectedFile.value = file
-  uploadStatus.value = null // Сброс статуса
+  uploadStatus.value = null
 }
-
 const clearFile = () => {
   selectedFile.value = null
   if (fileInput.value) fileInput.value.value = ''
   uploadStatus.value = null
 }
-
-const formatFileSize = (bytes) => {
+const formatFileSize = (bytes: number) => {
   if (bytes === 0) return '0 B'
   const k = 1024
   const sizes = ['B', 'KB', 'MB', 'GB']
@@ -278,10 +333,9 @@ const formatFileSize = (bytes) => {
   return parseFloat((bytes / Math.pow(k, i)).toFixed(2)) + ' ' + sizes[i]
 }
 
-// === Upload & Polling ===
+// === Upload ===
 const uploadFeed = async () => {
   if (!selectedFile.value || !selectedCategoryId.value) return
-
   const formData = new FormData()
   formData.append('feed', selectedFile.value)
   formData.append('category_id', selectedCategoryId.value)
@@ -291,117 +345,28 @@ const uploadFeed = async () => {
     uploadStatus.value = {
       type: 'info',
       title: 'Файл загружается...',
-      message: 'Пожалуйста, не закрывайте вкладку до начала обработки.'
+      message: 'Пожалуйста, не закрывайте вкладку.',
     }
 
     const { data } = await http.post('/vendor/feed/upload', formData)
+    const reportId = data.reportId
 
     uploadStatus.value = {
       type: 'info',
       title: 'Обработка данных',
-      message: 'Файл принят сервером. Ожидаем завершения фоновых задач...'
+      message: 'Файл принят. Ожидаем завершения фоновых задач...',
     }
 
-    // Сразу обновляем историю, чтобы показать "В обработке"
-    loadHistory()
-    startPolling(data.reportId)
-
-  } catch (error) {
+    // Запускаем Short Polling (вместо SSE)
+    startStatusPolling(reportId)
+  } catch (error: any) {
     isUploading.value = false
     uploadStatus.value = {
       type: 'error',
       title: 'Ошибка загрузки',
-      message: error.response?.data?.message || 'Сервер не отвечает'
+      message: error.response?.data?.message || 'Сервер не отвечает',
     }
   }
-}
-const downloadErrorReport =  () => {
-  downloadFile(uploadStatus.value?.errorFileUrl);
-};
-const startPolling = (reportId) => {
-  if (pollInterval.value) clearInterval(pollInterval.value)
-
-  let attempts = 0
-  const maxAttempts = 600 // ~20 минут макс (если интервал 2 сек)
-
-  pollInterval.value = setInterval(async () => {
-    attempts++
-    if (attempts > maxAttempts) {
-      stopPolling()
-      uploadStatus.value = { type: 'warning', title: 'Таймаут', message: 'Обработка идет слишком долго. Проверьте статус в истории позже.' }
-      return
-    }
-
-    try {
-      const { data } = await http.get(`/vendor/feed/report-status/${reportId}`)
-
-      if (data.isFinished) {
-        stopPolling();
-        isUploading.value = false;
-        selectedFile.value = null;
-        const finalStatuses = ['completed', 'completed_with_errors', 'failed'];
-        if (!finalStatuses.includes(data.status)) {
-          console.warn('isFinished=true, но статус не финальный:', data.status);
-          // Не останавливаем polling — продолжаем
-          return;
-        }
-
-        // === Формируем основное сообщение ===
-        let baseMessage = `Обработано товаров: ${data.totalRows}`;
-        if (data.errors && data.errors.total_errors  > 0) {
-          baseMessage += `. Ошибок: ${data.errors.total_errors}`;
-        }
-
-        // === Добавляем метрики, если есть ===
-        const metrics = data.metrics || {};
-        let metricsLines = [];
-        if (metrics.importTime !== undefined) {
-          metricsLines.push(`⏱ Импорт в БД: ${metrics.importTime.toFixed(1)} сек`);
-        }
-        if (metrics.indexTime !== undefined) {
-          metricsLines.push(`🔍 Индексация: ${metrics.indexTime.toFixed(1)} сек`);
-        }
-        if (metrics.totalElapsed !== undefined) {
-          metricsLines.push(`🕗 Общее время: ${formatDuration(metrics.totalElapsed)}`);
-        }
-
-        const fullMessage = baseMessage + (metricsLines.length ? '\n' + metricsLines.join('\n') : '');
-
-        if (data.errors && data.errors.total_errors > 0) {
-          uploadStatus.value = {
-            type: 'warning',
-            title: 'Загружено с ошибками',
-            message: fullMessage,
-            errorFileUrl: data.errorFileUrl,               // ← URL файла
-            errorCount: data.errors.total_errors || 0,     // ← общее число ошибок
-            previewErrors: data.errors.preview || [],
-          };
-        } else {
-          uploadStatus.value = {
-            type: 'success',
-            title: 'Успешно!',
-            message: fullMessage,
-            errorFileUrl: data.errorFileUrl,
-          };
-        }
-        loadHistory()
-      } else {
-        // Обновляем прогресс
-        uploadStatus.value = {
-          type: 'info',
-          title: 'Обработка данных...',
-          message: `Обработано ${data.successCount + (data.errorCount || 0)} из ${data.totalRows}`
-        }
-      }
-    } catch (e) {
-      console.warn('Ошибка опроса', e)
-    }
-  }, 2000)
-}
-
-const stopPolling = () => {
-  if (pollInterval.value) clearInterval(pollInterval.value)
-  pollInterval.value = null
 }
 
 // === History ===
@@ -410,43 +375,39 @@ const loadHistory = async () => {
   try {
     const { data } = await http.get('/vendor/feed/history')
     uploadHistory.value = data.items || []
-    const activeReports = uploadHistory.value.filter(item =>
+
+    const activeReports = uploadHistory.value.filter((item: any) =>
         !FEED_REPORT_FINAL_STATUSES.includes(item.status)
     )
 
-    // Останавливаем текущий polling (на случай, если он уже идёт)
-    stopPolling()
-
-    // Запускаем polling для самого нового активного отчёта
-    if (activeReports.length > 0) {
-      // Предполагается, что история отсортирована по убыванию (новые сверху)
-      // Если нет — отсортируйте явно:
-      const sorted = [...activeReports].sort((a, b) =>
-          new Date(b.created_at) - new Date(a.created_at)
+    // Если есть активные отчеты и мы сейчас не грузим новый файл
+    if (activeReports.length > 0 && !isUploading.value) {
+      const sorted = [...activeReports].sort((a: any, b: any) =>
+          new Date(b.created_at).getTime() - new Date(a.created_at).getTime()
       )
       const latest = sorted[0]
-      startPolling(latest.id)
+      startStatusPolling(latest.id)
     }
+  } catch (e) {
+    console.error('Failed to load history:', e)
   } finally {
     loadingHistory.value = false
   }
 }
 
-const formatDate = (dateStr) => {
+const formatDate = (dateStr: string) => {
   return new Date(dateStr).toLocaleDateString('ru-RU', {
     day: '2-digit', month: 'short', hour: '2-digit', minute: '2-digit'
   })
 }
-
-const getStatusClass = (status) => {
+const getStatusClass = (status: string) => {
   if (['completed'].includes(status)) return 'success'
   if (['completed_with_errors'].includes(status)) return 'warning'
   if (['failed'].includes(status)) return 'error'
-  return 'processing' // для queued, parsing, processing, chunks_queued
+  return 'processing'
 }
-
-const getStatusLabel = (status) => {
-  const labels = {
+const getStatusLabel = (status: string) => {
+  const labels: Record<string, string> = {
     queued: 'В очереди',
     parsing: 'Парсинг',
     processing: 'Обработка',
@@ -457,33 +418,21 @@ const getStatusLabel = (status) => {
   }
   return labels[status] || 'Неизвестно'
 }
-
-const formatDuration = (seconds) => {
-  if (seconds < 60) {
-    return `${Math.floor(seconds)}с`
-  }
-
-  const totalSeconds = Math.round(seconds)
-  const hours = Math.floor(totalSeconds / 3600)
-  const minutes = Math.floor((totalSeconds % 3600) / 60)
-  const secs = totalSeconds % 60
-
-  const parts = []
-  if (hours > 0) parts.push(`${hours}ч`)
-  if (minutes > 0) parts.push(`${minutes}мин`)
-  if (secs > 0 || parts.length === 0) parts.push(`${secs}с`)
-
-  return parts.join(' ')
-}
-
-const getStatusIcon = (type) => {
-  const icons = { info: '⏳', success: '✅', warning: '⚠️', error: '❌' }
+const getStatusIcon = (type: string) => {
+  const icons: Record<string, string> = { info: '⏳', success: '✅', warning: '⚠️', error: '❌' }
   return icons[type]
+}
+const downloadErrorReport = () => {
+  if (uploadStatus.value?.errorFileUrl) {
+    window.open(uploadStatus.value.errorFileUrl, '_blank')
+  }
 }
 
 // === Lifecycle ===
 onMounted(() => loadHistory())
-onUnmounted(() => stopPolling())
+onUnmounted(() => {
+  stopStatusPolling() // Корректно очищает таймер
+})
 </script>
 
 <style scoped>
@@ -663,5 +612,127 @@ onUnmounted(() => stopPolling())
 .history-item {
   position: relative;
   padding-right: 32px; /* место для иконки */
+}
+
+.metrics-display {
+  display: flex;
+  gap: 16px;
+  font-size: 13px;
+  color: #64748b;
+}
+
+.metric-item {
+  background: rgba(0, 0, 0, 0.05);
+  padding: 4px 8px;
+  border-radius: 4px;
+}
+
+.status-alert.success {
+  background: #f0fdf4;
+  color: #166534;
+  border: 1px solid #dcfce7;
+}
+
+.progress-container {
+  margin-top: 1rem;
+}
+.progress-info {
+  display: flex;
+  justify-content: space-between;
+  font-size: 0.85rem;
+  color: #666;
+  margin-bottom: 0.25rem;
+}
+.eta-text {
+  font-weight: 600;
+  color: #333;
+}
+.progress-bar-bg {
+  width: 100%;
+  height: 8px;
+  background-color: #e0e0e0;
+  border-radius: 4px;
+  overflow: hidden;
+}
+.progress-bar-fill {
+  height: 100%;
+  background-color: #4caf50; /* Зеленый цвет */
+  transition: width 0.5s ease;
+}
+
+
+.progress-container { margin-top: 1rem; }
+.progress-info {
+  display: flex;
+  justify-content: space-between;
+  font-size: 0.85rem;
+  color: #666;
+  margin-bottom: 0.25rem;
+}
+.eta-text { font-weight: 600; color: #333; }
+.progress-bar-bg {
+  width: 100%;
+  height: 8px;
+  background-color: #e0e0e0;
+  border-radius: 4px;
+  overflow: hidden;
+}
+.progress-bar-fill {
+  height: 100%;
+  background-color: #4caf50;
+  transition: width 0.5s ease;
+}
+
+.stats-grid {
+  display: grid;
+  grid-template-columns: repeat(3, 1fr);
+  gap: 1rem;
+  padding: 1rem;
+  background: #f8f9fa;
+  border-radius: 8px;
+}
+
+.stat-item {
+  text-align: center;
+  padding: 0.5rem;
+}
+
+.stat-item.success { color: #28a745; }
+.stat-item.error { color: #dc3545; }
+.stat-item.total { color: #6c757d; }
+
+.stat-value {
+  display: block;
+  font-size: 1.5rem;
+  font-weight: 700;
+}
+
+.stat-label {
+  font-size: 0.75rem;
+  text-transform: uppercase;
+  letter-spacing: 0.5px;
+}
+
+/* Прогресс бар */
+.progress-container { margin-top: 1rem; }
+.progress-info {
+  display: flex;
+  justify-content: space-between;
+  font-size: 0.85rem;
+  color: #666;
+  margin-bottom: 0.25rem;
+}
+.eta-text { font-weight: 600; color: #333; }
+.progress-bar-bg {
+  width: 100%;
+  height: 8px;
+  background-color: #e0e0e0;
+  border-radius: 4px;
+  overflow: hidden;
+}
+.progress-bar-fill {
+  height: 100%;
+  background-color: #4caf50;
+  transition: width 0.5s ease;
 }
 </style>

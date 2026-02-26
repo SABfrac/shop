@@ -27,19 +27,24 @@ export default defineConfig({
         proxy: {
             // Все запросы на /api пойдут в nginx контейнер (внутрисетевой https)
             '/api': {
-                target: 'https://nginx:443',
+                target: 'https://app:443',
                 changeOrigin: true,
                 secure: false, // т.к. сертификат self-signed в контейнере nginx
+                ws: true,
             },
             '/images': {
-                target: 'https://nginx:443', // Куда слать запрос реально
+                target: 'http://imaginary:9000', // Куда слать запрос реально
                 changeOrigin: true,
                 secure: false, // Игнорировать проблемы с SSL
+                rewrite: (path) => path.replace(/^\/images/, ''),
             },
+
+
+
         },
 
         hmr: {
-            // protocol: 'wss',
+             protocol: 'wss',
             host: 'localhost',
             clientPort: 5173,
         },

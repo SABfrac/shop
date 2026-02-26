@@ -58,7 +58,7 @@ class FeedGeneratorController extends Controller
      * Генерация фида
      * @param int $rows Количество строк
      * @param string $output Путь к файлу
-     * запуск в командной строке :  docker-compose exec php php yii feed-generator/generate
+     * запуск в командной строке :  docker-compose exec app php yii feed-generator/generate
      */
     public function actionGenerate($rows = 1000000, $output = '@runtime/generated_feed.csv')
     {

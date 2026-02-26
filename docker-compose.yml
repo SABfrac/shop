@@ -1,37 +1,60 @@
 services:
-  nginx:
-    image: nginx:latest
-    container_name: yii2_nginx
+  app:
+    build:
+      context: .
+      dockerfile: Dockerfile
+    container_name: yii2_frankenphp
     ports:
-      - "8080:80"
-      - "8443:443"
+      - "80:80"
+      - "443:443"
     volumes:
-      - ./:/var/www/html # Прокидываем код
-      - ./nginx/default.conf:/etc/nginx/conf.d/default.conf # и конфиг Nginx
-      - ./frontend/ssl:/etc/nginx/ssl
-
-    depends_on:
-      - php
-      - imaginary
-
-
-  php:
-    build: .
-    depends_on:
-      - rabbitmq
-      - redis
-      - postgres
+      - ./:/app/public
+      - ./php.ini:/usr/local/etc/php/conf.d/99-custom.ini
+      - ./Caddyfile:/etc/caddy/Caddyfile
+      - ./frontend/ssl:/app/ssl
     environment:
-        - REDIS_HOST=redis
-        - REDIS_PORT=6379
-        - RABBITMQ_HOST=rabbitmq
-        - RABBITMQ_PORT=5672
-        - RABBITMQ_USER=guest
-        - RABBITMQ_PASSWORD=guest
-        - POSTGRES_HOST=postgres
-    volumes:
-        - .:/var/www/html
+      - SERVER_NAME=:80
+      - FRANKENPHP_CONFIG=worker ./index.php
+      - FRANKENPHP_MAX_REQUESTS=1000
+      - DB_HOST=postgres
+      - DB_NAME=mydb
+      - DB_USER=myuser
+      - DB_PASSWORD=root
+      - REDIS_HOST=redis
+      - RABBITMQ_HOST=rabbitmq
+    depends_on:
+      - postgres
+      - redis
+      - rabbitmq
+
+    restart: unless-stopped
+
+    # ========== WORKERS (CLI + SUPERVISOR) ==========
+  worker:
+      build:
+        context: .
+        dockerfile: Dockerfile.worker
+      container_name: yii2_worker
+      command: [ "/usr/bin/supervisord", "-c", "/etc/supervisor/conf.d/worker.conf" ]
+      volumes:
+        - ./:/app/public
+        - ./worker.conf:/etc/supervisor/conf.d/worker.conf
         - ./php.ini:/usr/local/etc/php/conf.d/99-custom.ini
+      working_dir: /app/public
+      environment:
+        - DB_HOST=postgres
+        - DB_NAME=mydb
+        - DB_USER=myuser
+        - DB_PASSWORD=root
+        - REDIS_HOST=redis
+        - RABBITMQ_HOST=rabbitmq
+      depends_on:
+        - app
+        - postgres
+        - redis
+        - rabbitmq
+
+      restart: unless-stopped
 
 
 
@@ -42,29 +65,8 @@ services:
      postgres
       -c timezone=Europe/Moscow
       -c log_timezone=Europe/Moscow
-      -c listen_addresses=*
-      -c autovacuum=on
-      -c autovacuum_max_workers=5
-      -c autovacuum_naptime=10s
-      -c autovacuum_vacuum_scale_factor=0.01
-      -c autovacuum_vacuum_threshold=50
-      -c autovacuum_analyze_scale_factor=0.01
-      -c autovacuum_analyze_threshold=50
-      -c shared_buffers=8GB
-      -c effective_cache_size=16GB
-      -c work_mem=128MB
-      -c maintenance_work_mem=2GB
       -c max_connections=200
-      -c checkpoint_completion_target=0.9
-      -c checkpoint_timeout=30min
-      -c max_wal_size=4GB
-      -c min_wal_size=1GB
-      -c wal_buffers=16MB
-      -c random_page_cost=1.1
-      -c effective_io_concurrency=200
-      -c max_worker_processes=8
-      -c max_parallel_workers_per_gather=4
-      -c max_parallel_workers=8
+      -c autovacuum=on
     container_name: yii2_pgs
     environment:
       POSTGRES_PASSWORD: root
@@ -73,9 +75,11 @@ services:
 
 
     ports:
-      - "5432:5432"
+      - "127.0.0.1:5432:5432"
     volumes:
-      - pgdata:/var/lib/postgresql/data
+        - pgdata:/var/lib/postgresql/data
+
+    restart: unless-stopped
 
 
   opensearch:
@@ -83,7 +87,7 @@ services:
     container_name: opensearch
     environment:
       - discovery.type=single-node
-      - bootstrap.memory_lock=true
+#      - bootstrap.memory_lock=true
       - "OPENSEARCH_JAVA_OPTS=-Xms1g -Xmx1g"
       #      - plugins.security.disabled=true  # Отключаем security для разработки (опционально)
       - OPENSEARCH_INITIAL_ADMIN_PASSWORD=StrongPassword123!
@@ -94,53 +98,57 @@ services:
         soft: -1
         hard: -1
     ports:
-      - "9200:9200"
-      - "9600:9600"
+      - "127.0.0.1:9200:9200"
+      - "127.0.0.1:9600:9600"
     volumes:
-      - opensearch-data:/usr/share/opensearch/data
+      - opensearch_data:/usr/share/opensearch/data
 
+    restart: unless-stopped
 
   opensearch-dashboards:
     image: opensearchproject/opensearch-dashboards:latest
     container_name: opensearch-dashboards
     ports:
-      - "5601:5601"
+      - "127.0.0.1:5601:5601"
     environment:
       OPENSEARCH_HOSTS: '["http://opensearch:9200"]'
       DISABLE_SECURITY_DASHBOARDS_PLUGIN: "true"
+
     depends_on:
       - opensearch
+    restart: unless-stopped
 
   rabbitmq:
     image: rabbitmq:3-management
-    container_name: rabbitmq
+    container_name: yii2_rabbitmq
     environment:
       RABBITMQ_DEFAULT_USER: guest
       RABBITMQ_DEFAULT_PASS: guest
     ports:
-      - "5672:5672"  # AMQP протокол
-      - "15672:15672"  # Веб-интерфейс управления
-#    volumes:
-#      - rabbitmq-data:/var/lib/rabbitmq
+      - "127.0.0.1:5672:5672"
+      - "127.0.0.1:15672:15672"
+    volumes:
+      - rabbitmq_data:/var/lib/rabbitmq
+
+    restart: unless-stopped
 
 
 
 # веб интерфейс  http://localhost:9001 можно руками создать backet
   minio:
     image: minio/minio:latest
-    container_name: minio
+    container_name: yii2_minio
     ports:
       - "127.0.0.1:9000:9000"
       - "127.0.0.1:9001:9001"    # Web-консоль (новая версия)
     environment:
       MINIO_ROOT_USER: minioadmin
       MINIO_ROOT_PASSWORD: minioadmin
-
+    command: server /data --console-address ":9001"
 
     volumes:
-      - ./data:/data            # данные на диске
-      - ./config:/root/.minio   # конфиг (устаревший путь для новых версий — см. примечание)
-    command: server /data --console-address ":9001"
+      - minio_data:/data
+
     restart: unless-stopped
 
 
@@ -150,97 +158,68 @@ services:
     image: h2non/imaginary:latest
     container_name: imaginary
     ports:
-      - "9002:9000" # Imaginary будет доступен снаружи на порту 8080
+      - "127.0.0.1:9002:9000" # Imaginary будет доступен снаружи на порту 8080
 
     command: -enable-url-source -http-read-timeout 15 -concurrency 20
+    restart: unless-stopped
 
 
 
 
 
-  queue-init:
-    build: .
-    container_name: yii2_queue_init
-    # Команда, которая выполнится один раз и контейнер остановится
-    command: php yii rabbit-mq/setup-debug-queues
-    depends_on:
-    - rabbitmq
-    environment:
-    # Те же переменные, что и у php/worker
-    - RABBITMQ_HOST=rabbitmq
-    - RABBITMQ_PORT=5672
-    - RABBITMQ_USER=guest
-    - RABBITMQ_PASSWORD=guest
 
-
-  worker:
-    build: .
-    container_name: yii2_worker
-    command: [ "/usr/bin/supervisord", "-c", "/etc/supervisor/conf.d/worker.conf" ]
-    depends_on:
-
-        rabbitmq:
-          condition: service_started
-        redis:
-          condition: service_started
-        postgres:
-          condition: service_started
-
-
-        queue-init:
-          condition: service_completed_successfully
-    environment:
-      - REDIS_HOST=redis
-      - REDIS_PORT=6379
-      - RABBITMQ_HOST=rabbitmq
-      - RABBITMQ_PORT=5672
-      - RABBITMQ_USER=guest
-      - RABBITMQ_PASSWORD=guest
-      - POSTGRES_HOST=postgres
-      - POSTGRES_USER=myuser
-      - POSTGRES_PASSWORD=root
-      - POSTGRES_DB=mydb
-    volumes:
-      - .:/var/www/html
-      - ./worker.conf:/etc/supervisor/conf.d/worker.conf
-      - ./php.ini:/usr/local/etc/php/conf.d/99-custom.ini
 
 
   #чтобы запускать vue c https и бэк yii2 с https нужны сертификаты ssl (в данном проекте пути в default.conf для Nginx прописаны) чтобы они были в  папке frontend/ssl
   frontend:
+    build:
+      context: ./frontend
+      dockerfile: Dockerfile
+    container_name: yii2_frontend
+    ports:
+      - "5173:5173"
+    volumes:
+      - ./frontend:/app
+      - /app/node_modules
+      - ./frontend/ssl:/app/ssl
+      - ./frontend/.env:/app/.env
+      - ./frontend/.env.development:/app/.env.development
+      - ./frontend/.env.production:/app/.env.production
+    command: npm run dev
+    environment:
+      - VITE_API_BASE_URL=https://localhost:5173
+    depends_on:
+      - app
 
-   build:
-    context: ./frontend # Указываем на папку, где лежит Vue-проект
-    dockerfile: Dockerfile
-   ports:
-    - "5173:5173" # Стандартный порт Vite
-   volumes:
-    - ./frontend:/app # Прокидываем код фронтенда
-    - /app/node_modules # Важный трюк, чтобы node_modules жили только в контейнере
+    profiles:
+      - dev
 
-   command: npm run dev
-   depends_on:
-     - nginx
 
 
 
   redis:
     image: redis:latest
+    container_name: yii2_redis
     ports:
-      - "6380:6379"
+      - "127.0.0.1:6380:6379"
     volumes:
       - redis_data:/data
 
-
-
+    restart: unless-stopped
 
 
 
 volumes:
   pgdata:
-  opensearch-data:
-  rabbitmq-data:
+  opensearch_data:
+  minio_data:
+  rabbitmq_data:
   redis_data:
+
+
+
+
+
 
 
 
@@ -255,7 +234,7 @@ volumes:
 
 
 #для загрузки фида
-# сначала в командной строке запускаем  очереди в rabbitMQ команда : docker-compose exec php php yii rabbit-mq/setup-queues
+# сначала в командной строке запускаем  очереди в rabbitMQ команда : docker-compose exec app php yii rabbit-mq/setup-queues
 # остановка всех консьюмеров использование: docker-compose stop worker
 # запуск консьюмеров после остановки использование: docker-compose start worker
 #      Добавление консьюмеров.
@@ -267,9 +246,9 @@ volumes:
 # проверка статуса воркеров соманда : docker-compose exec worker supervisorctl status
 
 
-#  затем в отдельном терминале запускаем очередь redis чтобы асинхронно пушить фиды команда : docker-compose exec php php yii queue/listen --verbose=1
+#  затем в отдельном терминале запускаем очередь redis чтобы асинхронно пушить фиды команда : docker-compose exec app php yii queue/listen --verbose=1
 
-#миграции через docker : docker-compose exec php php yii migrate/create 'заполняем название миграции'
+#миграции через docker : docker-compose exec app php yii migrate/create 'заполняем название миграции'
 
 #зайти в Redis через docker :  docker exec -it shoplocal-redis-1 redis-cli
 # внутри вводим HGETALL feed:metrics:id таблицы vendor_feed_reports
